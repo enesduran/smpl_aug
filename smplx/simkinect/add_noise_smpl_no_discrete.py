@@ -2,11 +2,12 @@
 import os 
 import cv2 
 import json
+import time
 import torch
 import numpy as np 
 import open3d as o3d
  
-from pytorch3d.io import IO, load_obj
+from pytorch3d.io import IO
 from pytorch3d.structures import Meshes
 from pytorch3d.implicitron.tools import point_cloud_utils
 from pytorch3d.renderer import RasterizationSettings, MeshRasterizer, PerspectiveCameras, look_at_view_transform 
@@ -60,15 +61,17 @@ def filterDisp(disp, dot_pattern_, invalid_disp_, size_filt_=6):
     vals[vals==0] = 1 
     weights_ = 1 /vals  
 
-    fill_weights = 1 / ( 1 + sqr_radius)
-    fill_weights[sqr_radius > 9] = -1.0 
-
     if len(disp.shape) == 2:
         disp_rows, disp_cols = disp.shape 
         dot_pattern_rows, dot_pattern_cols = dot_pattern_.shape
+        bs = 1 
     else:
         bs, disp_rows, disp_cols = disp.shape
         dot_pattern_rows, dot_pattern_cols = dot_pattern_.shape
+
+    fill_weights = 1 / ( 1 + sqr_radius)
+    fill_weights[sqr_radius > 9] = -1.0 
+    fill_weights = np.repeat(fill_weights[None, ...], bs, axis=0)
 
     dot_pattern_ = np.repeat(dot_pattern_[None, ...], bs, axis=0)
 
@@ -101,9 +104,9 @@ def filterDisp(disp, dot_pattern_, invalid_disp_, size_filt_=6):
                 dot_win = dot_pattern_[:, r_dot:r_dot+size_filt_, c_dot:c_dot+size_filt_] 
 
                 valid_dots = dot_win[window < invalid_disp_]
-
-                n_valids = np.sum(valid_dots) / 255.0 
-                n_thresh = np.sum(dot_win) / 255.0 
+                
+                n_valids = np.sum(valid_dots) / (255.0 * bs) 
+                n_thresh = np.sum(dot_win) / (255.0 * bs)
 
                 if n_valids > n_thresh / 1.2: 
 
@@ -115,35 +118,39 @@ def filterDisp(disp, dot_pattern_, invalid_disp_, size_filt_=6):
                     cur_valid_dots = np.multiply(np.where(window<invalid_disp_, dot_win, 0), 
                                                  np.where(diffs < window_inlier_distance_, 1, 0))
 
-                    n_valids = np.sum(cur_valid_dots) / 255.0
+                    n_valids = np.sum(cur_valid_dots) / (255.0 * bs)
 
                     if n_valids > n_thresh / 1.2: 
                     
-                        accu = window[center, center] 
+                        accu = window[:, center, center] 
 
-                        assert(accu < invalid_disp_)
+                        # try: 
+                        #     assert((accu <= invalid_disp_).all())
+                        # except AssertionError:
+                        #     import ipdb; ipdb.set_trace()
 
                         #out_disp[r+center, c + center] = round((accu)*8.0) / 8.0 # discretization
+                        out_disp[:, r+center, c + center] = accu
 
-                        import ipdb; ipdb.set_trace()
 
-                        out_disp[r+center, c + center] = accu ########################
-
-                        interpolation_window = interpolation_map[r:r+size_filt_, c:c+size_filt_]
-                        disp_data_window     = out_disp[r:r+size_filt_, c:c+size_filt_]
+                        interpolation_window = interpolation_map[:, r:r+size_filt_, c:c+size_filt_]
+                        # disp_data_window     = out_disp[:, r:r+size_filt_, c:c+size_filt_]
 
                         substitutes = np.where(interpolation_window < fill_weights, 1, 0)
-                        interpolation_window[substitutes==1] = fill_weights[substitutes ==1 ]
 
-                        disp_data_window[substitutes==1] = out_disp[r+center, c+center]
+                        interpolation_window[substitutes==1] = fill_weights[substitutes==1]
+
+                        # throws error in the batch setting and not necessary for the current implementation
+                        # disp_data_window[substitutes==1] = out_disp[:, r+center, c+center]
+
 
     return out_disp
 
 
 def capture_mesh_depth(meshes, camera, image_size):
 
-    raster_settings = RasterizationSettings(image_size=image_size)
-                                            # , faces_per_pixel=1)
+    raster_settings = RasterizationSettings(image_size=image_size #)
+                                            , faces_per_pixel=1)
 
     rasterizer = MeshRasterizer(
         cameras=camera, 
@@ -164,17 +171,22 @@ def recover_pcd_from_depth(depth_noised_tensor, camera):
     else:
         bs, h, w = depth_noised_tensor.shape
         
+
+    depth_noised_tensor = depth_noised_tensor.reshape(bs, 1, h, w)
     # dummy rgb values
     rgb = torch.ones((bs, 3, h, w)).to(depth_noised_tensor) * 0.5
 
-    projected_pcd_noised = point_cloud_utils.get_rgbd_point_cloud(camera=camera, 
-                                                                  image_rgb=rgb, 
-                                                                  depth_map=depth_noised_tensor.reshape(bs, 1, h, w))
+    projected_pcd_noised_list = [point_cloud_utils.get_rgbd_point_cloud(camera=camera[i], 
+                                                                  image_rgb=rgb[i][None], 
+                                                                  depth_map=depth_noised_tensor[i][None]) for i in range(bs)]
 
-    return projected_pcd_noised
+    return projected_pcd_noised_list
 
 
 def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""):
+
+    time_start = time.time()
+    
 
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -195,16 +207,13 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
     camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T': _cam_['cam_T']} for _cam_ in camera_config_dict["cameras"]}
     num_cameras = len(camera_ext_dict)
 
-    io_object = IO()
-
     if depth_noise_file == "":
         depth_noise_file = "smplx/simkinect/data/sample_pattern.png"
 
     # reading the image directly in gray with 0 as input 
     kinect_dot_pattern = cv2.imread(depth_noise_file, cv2.IMREAD_GRAYSCALE)
     
-
-     # various variables to handle the noise modelling
+    # various variables to handle the noise modelling
     scale_factor  = 100.0   # converting depth from m to cm 
     baseline_m    = 0.075   # baseline in m 0.075
     INVALID_DISP_THRESHOLD = 99999999.9
@@ -213,12 +222,9 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
     # world units
     fx, fy = camera_config_dict['focal_length_x'], camera_config_dict['focal_length_y']
 
-    # camera_ext_dict_ = {0:(2, -90, 180), 
-    #                         1:(2, 90, 0),
-    #                         2:(2, 90, 90),
-    #                         3:(2, 90, -90)}
+    # for _t_ in range(T):
+    for _t_ in range(1):
 
-    for _t_ in range(T):
     
         if upsample_mesh:
             # Apply the subdivision algorithm to the mesh
@@ -249,12 +255,11 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
         depth_gt_unscaled = capture_mesh_depth(meshes, cameras_batch, image_size=image_size)
         depth_gt = (depth_gt_unscaled- depth_gt_unscaled.min()) / (depth_gt_unscaled.max() - depth_gt_unscaled.min() + 1e-10)
 
-        depth_interp = add_gaussian_shifts(depth_gt)
-        disp_ = fx * baseline_m / (depth_interp + 1e-10)
+        depth_interp = add_gaussian_shifts(depth_gt) # ok
 
-        # depth_f = np.round(disp_ * 8.0)/8.0 # discretization
-        depth_f = disp_ ######################## 
-
+        depth_f = fx * baseline_m / (depth_interp + 1e-10)
+        # depth_f = np.round(depth_f * 8.0)/8.0 # discretization
+        
         out_disp = filterDisp(depth_f, kinect_dot_pattern, INVALID_DISP_THRESHOLD, size_filt_=filter_size_window)
 
         depth = fx * baseline_m / out_disp
@@ -263,23 +268,21 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
         # though often this can be tuned from [100, 200] to get the desired banding / quantisation effects 
         noisy_depth = (35130/np.round((35130/np.round(depth*scale_factor)) + np.random.normal(size=depth.shape)*(1.0/6.0) + 0.5))/scale_factor # discretization
 
-        import ipdb; ipdb.set_trace()
-
         depth[out_disp == INVALID_DISP_THRESHOLD] = 0 
-    
-
-        os.makedirs(f'outdir/{setting_name}', exist_ok=True)
-        # save depth for each camera
-        for cam_id in range(num_cameras):
-            cv2.imwrite(f'outdir/{setting_name}/perfect_depth_{cam_id}_{image_size}.png', depth_gt[cam_id] * 255)
-            cv2.imwrite(f'outdir/{setting_name}/processed_depth_{cam_id}_{image_size}.png', depth[cam_id] * 255)
-            cv2.imwrite(f'outdir/{setting_name}/noised_depth_{cam_id}_{image_size}.png', noisy_depth[cam_id] * 255)
-
+        
         # Recover point cloud from noised depth image 
         projected_pcd_noised = recover_pcd_from_depth(torch.from_numpy(noisy_depth).to(device), cameras_batch)
 
+        os.makedirs(f'outdir/{setting_name}', exist_ok=True)
 
+        io_object = IO() 
+
+        # save depth for each camera
         for cam_id in range(num_cameras):
-            io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}_noised_smpl_p3d_no_discret_filt6_{cam_id}_{image_size}.ply')
-            io_object.save_pointcloud(projected_pcd_noised, f'outdir/{setting_name}_noised_smpl_p3d_no_discret_filt6_{cam_id}_{image_size}.ply')
-    
+            cv2.imwrite(f'outdir/{setting_name}/perfect_depth_{cam_id}_{image_size}.png', depth_gt[cam_id] * 255)
+            cv2.imwrite(f'outdir/{setting_name}/processed_depth_{cam_id}_{image_size}.png', depth_f[cam_id] * 255)
+            cv2.imwrite(f'outdir/{setting_name}/noised_depth_{cam_id}_{image_size}.png', noisy_depth[cam_id] * 255)
+            io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}/noised_smpl_p3d_no_discret_filt6_{cam_id}_{image_size}.ply')
+
+
+    print("Done in ", time.time() - time_start, " seconds")

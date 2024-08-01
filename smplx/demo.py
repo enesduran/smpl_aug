@@ -80,8 +80,10 @@ def main(model_folder,
     
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='SMPL-X Demo')
+    parser = argparse.ArgumentParser(description='Augmentation Framework Demo')
 
+    parser.add_argument('--body-model', choices=['smplx', 'smplh', 'smpl'], type=int,
+                        help='Body Model to be used.')
     parser.add_argument('--model-folder', required=True, type=str,
                         help='The path to the model folder')
     parser.add_argument('--camera-config', default='', type=str,
