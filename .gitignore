@@ -1,0 +1,15 @@
+smplx/sculpt/data
+smplx/sculpt/data_redundant
+smplx/sculpt/outdir
+
+*.obj
+*.pkl
+*.npz
+*.log
+*.json
+*.npy
+*.ply
+*.pyc
+*.png
+*.zip
+
