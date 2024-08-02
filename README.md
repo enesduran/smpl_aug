@@ -21,9 +21,26 @@ module load cuda/12.1
 
 Here are the instructions for setting SCULPT and SMPL models.  
 
-### SMPL 
+### Body Models 
 
-Our framework uses SMPL as explicit body model. To [SMPL webpage](https://smpl.is.tue.mpg.de/) and register. Download version 1.1.0 and put them under `smplx/smpl_all_models`. 
+Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version 1.1.0 and put them under `smplx/smpl_all_models`. 
+
+```
+./body_models
+    ├── smpl
+    |   ├── basicmodel_f_lbs_10_207_0_v1.1.0.pkl
+    |   ├── basicmodel_m_lbs_10_207_0_v1.1.0.pkl
+    |   └── basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl   
+    ├── smplh(*) 
+    |   ├── basicmodel_f_lbs_10_207_0_v1.1.0.pkl
+    |   ├── basicmodel_m_lbs_10_207_0_v1.1.0.pkl
+    |   └── basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl   
+    └── smplx(*) 
+        ├── basicmodel_f_lbs_10_207_0_v1.1.0.pkl
+        ├── basicmodel_m_lbs_10_207_0_v1.1.0.pkl
+        └── basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl   
+(*) optional
+```
 
 ### SCULPT (Optional)
 
@@ -33,7 +50,7 @@ Our framework uses SCULPT as garment generation model. If you want to make use o
 
 Having set environment up, downloaded models and placed them under the corresponding paths, you are good to go! To run the augmentation:
 
-```python smplx/demo.py --model-folder smpl_all_models/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl --camera-config camera_configs/kinect.json``` 
+```python smplx/demo.py --model-folder body_models/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl --camera-config camera_configs/kinect.json``` 
 
 Notice that our method uses SMPL body model. It can be extended to smplx model (pose data and garment generator should be compatible with SMPLX body model)
 
