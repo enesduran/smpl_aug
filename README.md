@@ -32,13 +32,13 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
     |   ├── basicmodel_m_lbs_10_207_0_v1.1.0.pkl
     |   └── basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl   
     ├── smplh(*) 
-    |   ├── basicmodel_f_lbs_10_207_0_v1.1.0.pkl
-    |   ├── basicmodel_m_lbs_10_207_0_v1.1.0.pkl
-    |   └── basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl   
+    |   ├── female
+    |   ├── male
+    |   └── neutral
     └── smplx(*) 
-        ├── basicmodel_f_lbs_10_207_0_v1.1.0.pkl
-        ├── basicmodel_m_lbs_10_207_0_v1.1.0.pkl
-        └── basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl   
+        ├── SMPLX_FEMALE.npz
+        ├── SMPLX_MALE.npz
+        └── SMPLX_NEUTRAL.npz   
 (*) optional
 ```
 
