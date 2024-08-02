@@ -1,0 +1,5 @@
+smpl motion      ACCAD/Female1Running_c3d C5-walk to run poses.npz
+smplh motion     GRAB/s5/airplane_fly_1_stageii.npz
+smplx motion     GRAB/s5/airplane_fly_1_stageii.npz
+
+
