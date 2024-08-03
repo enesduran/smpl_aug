@@ -11,8 +11,8 @@ import tempfile
 import torch
 
 import dnnlib
-from training import training_loop
-from metrics import metric_main
+from core.sculpt.training import training_loop_
+from metrics_ import metric_main
 from torch_utils import training_stats
 from torch_utils import custom_ops
 import legacy
@@ -40,7 +40,7 @@ def subprocess_fn(rank, c, temp_dir):
         custom_ops.verbosity = 'none'
 
     # Execute training loop.
-    training_loop.training_loop(rank=rank, **c)
+    training_loop_.training_loop(rank=rank, **c)
 
 #----------------------------------------------------------------------------
 

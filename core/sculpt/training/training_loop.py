@@ -19,7 +19,7 @@ from torch_utils.ops import grid_sample_gradfix
 import ipdb
 
 import legacy
-from metrics import metric_main
+from metrics_ import metric_main
 
 #----------------------------------------------------------------------------
 

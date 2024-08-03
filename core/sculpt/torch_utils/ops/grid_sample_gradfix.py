@@ -29,6 +29,7 @@ def grid_sample(input, grid):
     if _should_use_custom_op():
         return _GridSample2dForward.apply(input, grid)
     return torch.nn.functional.grid_sample(input=input, grid=grid, mode='bilinear', padding_mode='zeros', align_corners=False)
+    
 
 #----------------------------------------------------------------------------
 

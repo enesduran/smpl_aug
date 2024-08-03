@@ -15,6 +15,7 @@
 # Contact: ps-license@tuebingen.mpg.de
 
 import torch
+torch.set_warn_always(False)
 import smpl_aug 
 import argparse
 import numpy as np
@@ -69,12 +70,23 @@ class SMPL_WRAPPER(nn.Module):
         cloth_types[:, 3] = 1
         kwargs_dict = {'cloth_types': cloth_types}
 
+        
+        transl = jaw_pose = reye_pose = leye_pose = jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
+        right_hand_pose = left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
+        
+        
         if self.body_model_type == 'smpl':
-            body_pose = torch.tensor(motion_dict["poses"][:, 3:72], dtype=torch.float32)[:120]
+            body_pose = torch.tensor(motion_dict["poses"][:, 3:72], dtype=torch.float32)[:motion_T]
         elif self.body_model_type == 'smplh':
             import ipdb; ipdb.set_trace()
         elif self.body_model_type == 'smplx':
             body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
+            jaw_pose = torch.tensor(motion_dict["poses"][:, 66:69], dtype=torch.float32)[:motion_T]
+            leye_pose = torch.tensor(motion_dict["poses"][:, 69:72], dtype=torch.float32)[:motion_T]
+            reye_pose = torch.tensor(motion_dict["poses"][:, 72:75], dtype=torch.float32)[:motion_T]
+            left_hand_pose = torch.tensor(motion_dict["poses"][:, 75:120], dtype=torch.float32)[:motion_T]
+            right_hand_pose = torch.tensor(motion_dict["poses"][:, 120:165], dtype=torch.float32)[:motion_T]
+
         elif self.body_model_type == 'mano':
             body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
         elif self.body_model_type == 'flame':
@@ -85,10 +97,6 @@ class SMPL_WRAPPER(nn.Module):
         global_orient = torch.tensor(motion_dict["poses"][:, :3], dtype=torch.float32)[:motion_T]
         betas = torch.tensor(motion_dict["betas"][None, :10], dtype=torch.float32).repeat(motion_T, 1)
         expression = torch.zeros_like(betas)
-
-
-        right_hand_pose = left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
-        transl = jaw_pose = reye_pose = leye_pose = jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
 
         output = self.model(betas=betas, 
                     expression=expression,
