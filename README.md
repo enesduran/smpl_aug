@@ -32,9 +32,9 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
     |   ├── SMPL_MALE.pkl
     |   └── SMPL_NEUTRAL.pkl   
     ├── smplh(*) 
-    |   ├── female
-    |   ├── male
-    |   └── neutral
+    |   ├── SMPLH_FEMALE.npz
+    |   ├── SMPLH_MALE.npz
+    |   └── SMPLH_NEUTRAL.npz
     └── smplx(*) 
         ├── SMPLX_FEMALE.npz
         ├── SMPLX_MALE.npz
