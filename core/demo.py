@@ -15,12 +15,10 @@
 # Contact: ps-license@tuebingen.mpg.de
 
 import torch
+import smpl_aug 
 import argparse
 import numpy as np
 import torch.nn as nn
-from smpl_aug.body_models import SMPL, create 
-
-from matplotlib import pyplot as plt
 from simkinect.add_noise_smpl_no_discrete import mesh_2_kinectpcd
 
 ### compatibility with python 2.7
@@ -36,6 +34,7 @@ np.complex = np.complex_
 class SMPL_WRAPPER(nn.Module):
     def __init__(self,
                  model_folder,
+                 body_model_type,
                 ext='npz',
                 gender='neutral',
                 num_betas=10,
@@ -44,35 +43,65 @@ class SMPL_WRAPPER(nn.Module):
         
         super(SMPL_WRAPPER, self).__init__()
 
-        self.model = SMPL(model_folder, 
-                    gender=gender, 
-                    use_face_contour=use_face_contour,
-                    num_betas=num_betas,
-                    ext=ext,
-                    clothing_option='clothed',
-                    render_depth=False)
+        self.body_model_type = body_model_type
+
+        self.model = smpl_aug.create(model_path=model_folder,
+                        model_type=body_model_type,
+                        gender=gender, 
+                        use_face_contour=use_face_contour,
+                        num_betas=num_betas,
+                        ext=ext,
+                        use_pca=False,
+                        clothing_option='clothed')
+
 
         self.camera_config = camera_config
 
 
-    def forward(self, motion_path, expression=None):
+    def forward(self, motion_path):
 
-        cloth_types = np.ones((120, 6), dtype=np.int64) * 3
+        motion_dict = np.load(motion_path)
+        motion_T = motion_dict["poses"].shape[0]
+        motion_T = min(motion_T, 120)
+
+
+        cloth_types = np.ones((motion_T, 6), dtype=np.int64) * 3
         cloth_types[:, 3] = 1
         kwargs_dict = {'cloth_types': cloth_types}
 
-        motion_dict = np.load(motion_path)
-        body_pose = torch.tensor(motion_dict["poses"][1200:1320, 3:72], dtype=torch.float32)
-        global_orient = torch.tensor(motion_dict["poses"][1200:1320, :3], dtype=torch.float32)
-        betas = torch.tensor(motion_dict["betas"][None, :10], dtype=torch.float32)
+        if self.body_model_type == 'smpl':
+            body_pose = torch.tensor(motion_dict["poses"][:, 3:72], dtype=torch.float32)[:120]
+        elif self.body_model_type == 'smplh':
+            import ipdb; ipdb.set_trace()
+        elif self.body_model_type == 'smplx':
+            body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
+        elif self.body_model_type == 'mano':
+            body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
+        elif self.body_model_type == 'flame':
+            raise NotImplementedError
+        else:
+            raise ValueError('Unknown body model type: {}'.format(self.body_model_type))
+
+        global_orient = torch.tensor(motion_dict["poses"][:, :3], dtype=torch.float32)[:motion_T]
+        betas = torch.tensor(motion_dict["betas"][None, :10], dtype=torch.float32).repeat(motion_T, 1)
+        expression = torch.zeros_like(betas)
+
+
+        right_hand_pose = left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
+        transl = jaw_pose = reye_pose = leye_pose = jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
 
         output = self.model(betas=betas, 
                     expression=expression,
                     global_orient=global_orient,
+                    transl=transl,
+                    reye_pose=reye_pose,
+                    leye_pose=leye_pose,
+                    jaw_pose=jaw_pose,
+                    left_hand_pose=left_hand_pose,
+                    right_hand_pose=right_hand_pose,
                     body_pose=body_pose,
-                    return_verts=True,
                     **kwargs_dict)
-        
+
         vertices = output.vertices.detach().cpu().numpy().squeeze()
 
         mesh_2_kinectpcd(vertices, self.model.faces, camera_config_file=self.camera_config)
@@ -81,7 +110,7 @@ class SMPL_WRAPPER(nn.Module):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Augmentation Framework Demo')
 
-    parser.add_argument('--body-model', choices=['smplx', 'smplh', 'smpl'], type=int,
+    parser.add_argument('--body-model-type', choices=['smplx', 'smplh', 'smpl'], type=str,
                         help='Body Model to be used.')
     parser.add_argument('--model-folder', required=True, type=str,
                         help='The path to the model folder')
@@ -100,10 +129,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     wrapper_obj = SMPL_WRAPPER(args.model_folder,
-                ext=args.ext,
-                gender=args.gender,
-                num_betas=10,
-                camera_config=args.camera_config,
-                use_face_contour=args.use_face_contour) 
+                               args.body_model_type,
+                               ext=args.ext,
+                               gender=args.gender,
+                               num_betas=10,
+                               camera_config=args.camera_config,
+                               use_face_contour=args.use_face_contour) 
     
     wrapper_obj(args.motion_path)
