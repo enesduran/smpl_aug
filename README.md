@@ -28,9 +28,9 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
 ```
 ./body_models
     ├── smpl
-    |   ├── basicmodel_f_lbs_10_207_0_v1.1.0.pkl
-    |   ├── basicmodel_m_lbs_10_207_0_v1.1.0.pkl
-    |   └── basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl   
+    |   ├── SMPL_FEMALE.pkl
+    |   ├── SMPL_MALE.pkl
+    |   └── SMPL_NEUTRAL.pkl   
     ├── smplh(*) 
     |   ├── female
     |   ├── male
@@ -49,8 +49,10 @@ Our framework uses SCULPT as garment generation model. If you want to make use o
 # Run Demo 
 
 Having set environment up, downloaded models and placed them under the corresponding paths, you are good to go! To run the augmentation:
-
-```python smplx/demo.py --model-folder body_models/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl --camera-config camera_configs/kinect.json``` 
+ 
+```python core/demo.py --model-folder body_models --body-model-type smpl --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json``` 
+```python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json``` 
+```python core/demo.py --model-folder body_models --body-model-type smplx --motion-path motion_data/sample_motion_data_smplx.npz --camera-config camera_configs/kinect.json``` 
 
 Notice that our method uses SMPL body model. It can be extended to smplx model (pose data and garment generator should be compatible with SMPLX body model)
 
