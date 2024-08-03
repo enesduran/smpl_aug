@@ -4,13 +4,14 @@
 Here we have provided the precomputed parameters used to generate the images for 
 the main paper and the SUPMAT video in the website. One can easily 
 modify these or make different combinations of these."""
-
 import os
 import time 
 import torch
+torch.set_warn_always(False)
 import dnnlib
 import legacy
 import numpy as np
+from loguru import logger
 from typing import List, Optional 
  
 
@@ -36,7 +37,7 @@ class SCULPT(object):
 
         # num_samples = 50
         os.makedirs(outdir, exist_ok=True)
-        print('Time taken in total:', time.time()-time_start)
+        logger.info('Time taken in total:', time.time()-time_start)
 
 
     def generate_images(self,
@@ -83,7 +84,7 @@ class SCULPT(object):
         disp_img_geo = (UV_geo * 0.5 + 0.5) * 2 * 0.071 - 0.071
         vert_disps = self.G_geometry.displacement_Layer(disp_img_geo)
 
-        print('Time taken for creating images:', time.time()-time_start_creation)
+        logger.info('Time taken for creating images:', time.time()-time_start_creation)
         return vert_disps
 
         
