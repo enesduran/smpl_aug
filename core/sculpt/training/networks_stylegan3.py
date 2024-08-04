@@ -13,7 +13,7 @@ from torch_utils import persistence
 from torch_utils.ops import conv2d_gradfix
 from torch_utils.ops import filtered_lrelu
 from torch_utils.ops import bias_act
-from core.sculpt.training.renderer_ import NormalRender, SMPL_Layer, displacement_Layer, TextureRender
+from core.sculpt.training.renderer import NormalRender, SMPL_Layer, displacement_Layer, TextureRender
 import matplotlib.pyplot as plt
 from torchvision.transforms import GaussianBlur
 import ipdb
