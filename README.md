@@ -57,7 +57,7 @@ python core/demo.py --model-folder body_models --body-model-type smpl --motion-p
 
 For smph: <br /> 
 ```
-python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json
+python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smplh.npz --camera-config camera_configs/kinect.json
 ``` 
 
 For smplx: <br /> 
