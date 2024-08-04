@@ -15,6 +15,7 @@
 # Contact: ps-license@tuebingen.mpg.de
 
 import torch
+import trimesh 
 torch.set_warn_always(False)
 import smpl_aug 
 import argparse
@@ -111,6 +112,9 @@ class SMPL_WRAPPER(nn.Module):
                     **kwargs_dict)
 
         vertices = output.vertices.detach().cpu().numpy().squeeze()
+ 
+        trimesh.Trimesh(vertices[0], self.model.faces).export('test.obj')
+        
 
         mesh_2_kinectpcd(vertices, self.model.faces, camera_config_file=self.camera_config)
     

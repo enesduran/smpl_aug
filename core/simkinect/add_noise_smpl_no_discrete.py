@@ -6,6 +6,7 @@ import time
 import torch
 import numpy as np 
 import open3d as o3d
+from loguru import logger
  
 from pytorch3d.io import IO
 from pytorch3d.structures import Meshes
@@ -46,6 +47,91 @@ def add_gaussian_shifts(depth, std=1/2.0):
     
 
 def filterDisp(disp, dot_pattern_, invalid_disp_, size_filt_):
+
+    xx = np.linspace(0, size_filt_-1, size_filt_)
+    yy = np.linspace(0, size_filt_-1, size_filt_)
+
+    xf, yf = np.meshgrid(xx, yy)
+
+    xf = xf - int(size_filt_ / 2.0)
+    yf = yf - int(size_filt_ / 2.0)
+
+    sqr_radius = (xf**2 + yf**2)
+    vals = sqr_radius * 1.2**2 
+
+    vals[vals==0] = 1 
+    weights_ = 1 /vals  
+
+    fill_weights = 1 / ( 1 + sqr_radius)
+    fill_weights[sqr_radius > size_filt_] = -1.0 
+
+    disp_rows, disp_cols = disp.shape 
+    dot_pattern_rows, dot_pattern_cols = dot_pattern_.shape
+
+    lim_rows = disp_rows - size_filt_
+    lim_cols = disp_cols - size_filt_
+
+    center = int(size_filt_ / 2.0)
+
+    window_inlier_distance_ = 0.1
+
+    out_disp = np.ones_like(disp) * invalid_disp_
+
+    interpolation_map = np.zeros_like(disp)
+
+    for r in range(0, lim_rows):
+
+        for c in range(0, lim_cols):
+            r_dot, c_dot = r, c
+            if (dot_pattern_rows - size_filt_ < r):
+                r_dot = r % (dot_pattern_rows - size_filt_)
+
+            if (dot_pattern_cols - size_filt_ < c):
+                c_dot = c % (dot_pattern_cols - size_filt_)
+
+            if dot_pattern_[r_dot+center, c_dot+center] > 0:
+                                
+                # c and r are the top left corner 
+                window  = disp[r:r+size_filt_, c:c+size_filt_] 
+                dot_win = dot_pattern_[r_dot:r_dot+size_filt_, c_dot:c_dot+size_filt_] 
+  
+                valid_dots = dot_win[window < invalid_disp_]
+
+                n_valids = np.sum(valid_dots) / 255.0 
+                n_thresh = np.sum(dot_win) / 255.0 
+
+                if n_valids > n_thresh / 1.2: 
+
+                    mean = np.mean(window[window < invalid_disp_])
+
+                    diffs = np.abs(window - mean)
+                    diffs = np.multiply(diffs, weights_)
+
+                    cur_valid_dots = np.multiply(np.where(window<invalid_disp_, dot_win, 0), 
+                                                 np.where(diffs < window_inlier_distance_, 1, 0))
+
+                    n_valids = np.sum(cur_valid_dots) / 255.0
+
+                    if n_valids > n_thresh / 1.2: 
+                    
+                        accu = window[center, center] 
+
+                        assert(accu < invalid_disp_)
+
+                        #out_disp[r+center, c + center] = round((accu)*8.0) / 8.0 # discretization
+                        out_disp[r+center, c + center] = accu ########################
+
+                        interpolation_window = interpolation_map[r:r+size_filt_, c:c+size_filt_]
+                        disp_data_window     = out_disp[r:r+size_filt_, c:c+size_filt_]
+
+                        substitutes = np.where(interpolation_window < fill_weights, 1, 0)
+                        interpolation_window[substitutes==1] = fill_weights[substitutes ==1 ]
+
+                        disp_data_window[substitutes==1] = out_disp[r+center, c+center]
+
+    return out_disp
+
+def filterDisp_(disp, dot_pattern_, invalid_disp_, size_filt_):
     """
     Filter the disparity map using the dot pattern and the disparity map
     disp: disparity map (C, H, W): np.array
@@ -286,22 +372,29 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
         depth_gt = (depth_gt_unscaled- depth_gt_unscaled.min()) / (depth_gt_unscaled.max() - depth_gt_unscaled.min() + 1e-10)
 
         depth_interp = add_gaussian_shifts(depth_gt) # ok
-        depth_f = fx * baseline_m / (depth_interp + 1e-10)
+        # depth_f = fx * baseline_m / (depth_interp + 1e-10)
+        depth_f = 10 * baseline_m / (depth_interp + 1e-10)
          
-        out_disp = filterDisp(depth_f, kinect_dot_pattern, INVALID_DISP_THRESHOLD, size_filt_=filter_size_window)
-        
+        out_disp = filterDisp(depth_f[0], kinect_dot_pattern, INVALID_DISP_THRESHOLD, filter_size_window)[None]
+        # out_disp = filterDisp_(depth_f, kinect_dot_pattern, INVALID_DISP_THRESHOLD, filter_size_window)[None]
 
-        depth = fx * baseline_m / out_disp
+        # depth = fx * baseline_m / out_disp
+        depth = 10 * baseline_m / out_disp
         
         # The depth here needs to converted to centimeters so scale factor is introduced 
         # though often this can be tuned from [100, 200] to get the desired banding / quantisation effects 
         # noisy_depth = (35130/np.round((35130/np.round(depth*scale_factor)) + np.random.normal(size=depth.shape)*(1.0/6.0) + 0.5))/scale_factor # discretization
-        noisy_depth = (35130/np.round((35130/np.round(depth*scale_factor + 1e-10)) + np.random.normal(size=depth.shape)*(1.0/6.0) + 0.5))/scale_factor # discretization
+        
+        noisy_depth = (35130/np.round(depth*scale_factor)) 
+        noisy_depth += np.random.normal(size=depth.shape)*(1.0/6.0)
+        noisy_depth = np.round(noisy_depth + 0.5)
+        noisy_depth = 35130 / noisy_depth
+        noisy_depth /= scale_factor
 
         depth[out_disp == INVALID_DISP_THRESHOLD] = 0 
         
         # Recover point cloud from noised depth image 
-        projected_pcd_noised = recover_pcd_from_depth(torch.from_numpy(noisy_depth).to(device), cameras_batch)
+        # projected_pcd_noised = recover_pcd_from_depth(torch.from_numpy(noisy_depth).to(device), cameras_batch)
 
         os.makedirs(f'outdir/{setting_name}', exist_ok=True)
 
@@ -314,7 +407,7 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
             cv2.imwrite(f'outdir/{setting_name}/processed_depth_{cam_id}_{image_size}.png', depth[cam_id] * 255)
             cv2.imwrite(f'outdir/{setting_name}/noised_depth_{cam_id}_{image_size}.png', noisy_depth[cam_id] * 255)
         
-            io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}/noised_smpl_p3d_no_discret_filt6_{cam_id}_{image_size}.ply')
+            # io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}/noised_smpl_p3d_no_discret_filt6_{cam_id}_{image_size}.ply')
 
 
-    print("Done in ", time.time() - time_start, " seconds")
+    logger.info(f"Done in {(time.time() - time_start):.2f} seconds")

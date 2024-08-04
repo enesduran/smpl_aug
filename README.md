@@ -54,16 +54,15 @@ python core/demo.py --model-folder body_models --body-model-type smpl --motion-p
 ``` 
 
 For smph: <br /> 
-```
-python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json
-``` 
+
+```python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json``` 
 
 For smplx: <br /> 
 ```
 python core/demo.py --model-folder body_models --body-model-type smplx --motion-path motion_data/sample_motion_data_smplx.npz --camera-config camera_configs/kinect.json
 ``` 
 
-Notice that our method uses SMPL body model. It can be extended to smplx model (pose data and garment generator should be compatible with SMPLX body model)
+The outputs will be saved under `outdir/`
 
 
 TODO (with importance order)
