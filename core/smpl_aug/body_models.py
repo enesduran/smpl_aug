@@ -135,17 +135,11 @@ class SMPL(smplx.SMPL):
         if clothing_option != 'minimal':
             logger.info('Using the clothed SMPL model, initializing the SCULPT model. This may take a while.')
 
-            SCULPT_FOLDER_PATH = os.path.join(os.path.dirname(__file__), "../sculpt")
-            SCULPT_TEXTURE_MODEL_PATH = os.path.join(SCULPT_FOLDER_PATH, './data/network-snapshot-025000.pkl')
-            SCULPT_GEO_MODEL_PATH = os.path.join(SCULPT_FOLDER_PATH, './data/network-snapshot-013440.pkl')
+            sys.path.append('core/sculpt')
+            from sculpt.gen_images_dataloader_with_render import SCULPT
 
-            sys.path.append(SCULPT_FOLDER_PATH)
-
-            from gen_images_dataloader_with_render import SCULPT
-
-            self.sculpt_instance = SCULPT(geo_network_pkl_path=SCULPT_GEO_MODEL_PATH,
-                                    texture_network_pkl_path=SCULPT_TEXTURE_MODEL_PATH,
-                                    outdir = './outdir')           
+            self.sculpt_instance = SCULPT(geo_network_pkl_path='core/sculpt/data/network-snapshot-013440.pkl',
+                                        outdir = './outdir')           
 
     def forward(
         self,
@@ -227,10 +221,8 @@ class SMPL(smplx.SMPL):
           
             clothing_displacements = self.sculpt_instance.generate_images(seeds=[7],    # plate code of Antalya
                                                 body_pose=full_pose,
-                                                cloth_types=kwargs.get("cloth_types")
-                                                # truncation_psi=1,
-                                                # body_shape=betas,
-                                                )
+                                                cloth_types=kwargs.get("cloth_types"),
+                                                rotmat_flag= not pose2rot)
             
             v_template_cano = v_template_cano + clothing_displacements.to(v_template_cano)
 
@@ -275,6 +267,7 @@ class SMPLLayer(SMPL):
             **kwargs,
         )
 
+
     def forward(
         self,
         betas: Optional[Tensor] = None,
@@ -316,53 +309,16 @@ class SMPLLayer(SMPL):
             Returns
             -------
         '''
-        model_vars = [betas, global_orient, body_pose, transl]
-        batch_size = 1
-        for var in model_vars:
-            if var is None:
-                continue
-            batch_size = max(batch_size, len(var))
-        device, dtype = self.shapedirs.device, self.shapedirs.dtype
-        if global_orient is None:
-            global_orient = torch.eye(3, device=device, dtype=dtype).view(
-                1, 1, 3, 3).expand(batch_size, -1, -1, -1).contiguous()
-        if body_pose is None:
-            body_pose = torch.eye(3, device=device, dtype=dtype).view(
-                1, 1, 3, 3).expand(
-                    batch_size, self.NUM_BODY_JOINTS, -1, -1).contiguous()
-        if betas is None:
-            betas = torch.zeros([batch_size, self.num_betas],
-                                dtype=dtype, device=device)
-        if transl is None:
-            transl = torch.zeros([batch_size, 3], dtype=dtype, device=device)
-        full_pose = torch.cat(
-            [global_orient.reshape(-1, 1, 3, 3),
-             body_pose.reshape(-1, self.NUM_BODY_JOINTS, 3, 3)],
-            dim=1)
 
-        vertices, joints = lbs(betas, full_pose, self.v_template,
-                               self.shapedirs, self.posedirs,
-                               self.J_regressor, self.parents,
-                               self.lbs_weights,
-                               pose2rot=False)
+        return super().forward(betas=betas,
+                                body_pose=body_pose,
+                                global_orient=global_orient,
+                                transl=transl,
+                                return_verts=return_verts,
+                                return_full_pose=return_full_pose,
+                                pose2rot=False,
+                                **kwargs)
 
-        joints = self.vertex_joint_selector(vertices, joints)
-        # Map the joints to the current dataset
-        if self.joint_mapper is not None:
-            joints = self.joint_mapper(joints)
-
-        if transl is not None:
-            joints += transl.unsqueeze(dim=1)
-            vertices += transl.unsqueeze(dim=1)
-
-        output = SMPLOutput(vertices=vertices if return_verts else None,
-                            global_orient=global_orient,
-                            body_pose=body_pose,
-                            joints=joints,
-                            betas=betas,
-                            full_pose=full_pose if return_full_pose else None)
-
-        return output
 
 
 class SMPLH(smplx.SMPLH):
@@ -740,7 +696,7 @@ class FLAMELayer(smplx.FLAMELayer):
 
 def build_layer(
     model_path: str,
-    model_type: str = 'smpl',
+    model_type: str,
     **kwargs
 ) -> Union[SMPLLayer, SMPLHLayer, SMPLXLayer, MANOLayer, FLAMELayer]:
     ''' Method for creating a model from a path and a model type
