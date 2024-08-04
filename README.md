@@ -23,9 +23,10 @@ Here are the instructions for setting SCULPT and SMPL models.
 
 ### Body Models 
 
-Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version 1.1.0 and put them under `smplx/smpl_all_models`. 
+Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version 1.1.0 and put them under `body_models` folder. 
 
-```./body_models
+```
+./body_models
     ├── smpl
     |   ├── SMPL_FEMALE.pkl
     |   ├── SMPL_MALE.pkl
@@ -38,7 +39,8 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
         ├── SMPLX_FEMALE.npz
         ├── SMPLX_MALE.npz
         └── SMPLX_NEUTRAL.npz   
-(*) optional```
+(*) optional
+```
 
 ### SCULPT (Optional)
 
@@ -54,8 +56,9 @@ python core/demo.py --model-folder body_models --body-model-type smpl --motion-p
 ``` 
 
 For smph: <br /> 
-
-```python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json``` 
+```
+python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json
+``` 
 
 For smplx: <br /> 
 ```
