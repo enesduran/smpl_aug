@@ -7,18 +7,18 @@ modify these or make different combinations of these."""
 import os
 import time 
 import torch
-torch.set_warn_always(False)
 import dnnlib
 import legacy
 import numpy as np
 from loguru import logger
 from typing import List, Optional 
+
+from pytorch3d.transforms import matrix_to_axis_angle
  
 
 class SCULPT(object):
     def __init__(self, 
                  geo_network_pkl_path: str,
-                 texture_network_pkl_path: str,
                  outdir: str) -> None:
         
         time_start = time.time()
@@ -43,7 +43,8 @@ class SCULPT(object):
     def generate_images(self,
         seeds: List[int],
         body_pose: Optional[torch.Tensor],
-        cloth_types: Optional[str]):
+        cloth_types: Optional[str],
+        rotmat_flag: bool = False) -> torch.Tensor:
 
         time_start_creation = time.time()
 
@@ -54,17 +55,17 @@ class SCULPT(object):
         z_geo = torch.from_numpy(np.random.RandomState(seeds).randn(sample_size, self.G_geometry.z_dim)).to(self.device) 
         label_ct = torch.from_numpy(cloth_types).to(self.device)
           
+        if rotmat_flag:
+            body_pose = matrix_to_axis_angle(body_pose).to(self.device).reshape(sample_size, -1)
+
         body_pose = body_pose.to(self.device)
 
-        mesh_ply_names = []
+        try:
+            ## Mapping network
+            ws_geo = self.G_geometry.mapping(z_geo, torch.cat((label_ct, body_pose[:,3:66].to(self.device)), 1), truncation_psi=1.0)
+        except:
+            import ipdb; ipdb.set_trace()
 
-        # find corresponding clothing
-        for i in range(6):
-            mesh_ply_names += [self.clothing_names[i]] * 20 
-        mesh_ply_names = np.array(mesh_ply_names)
-            
-        ## Mapping network
-        ws_geo = self.G_geometry.mapping(z_geo, torch.cat((label_ct, body_pose[:,3:66].to(self.device)), 1), truncation_psi=1.0)
 
         ## Texture Network
         ws_geo = ws_geo.to(torch.float32).unbind(dim=1)
