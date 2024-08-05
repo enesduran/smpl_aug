@@ -59,14 +59,10 @@ class SCULPT(object):
             body_pose = matrix_to_axis_angle(body_pose).to(self.device).reshape(sample_size, -1)
 
         body_pose = body_pose.to(self.device)
-
-        try:
-            ## Mapping network
-            ws_geo = self.G_geometry.mapping(z_geo, torch.cat((label_ct, body_pose[:,3:66].to(self.device)), 1), truncation_psi=1.0)
-        except:
-            import ipdb; ipdb.set_trace()
-
-
+ 
+        ## Mapping network
+        ws_geo = self.G_geometry.mapping(z_geo, torch.cat((label_ct, body_pose[:,3:66].to(self.device)), 1), truncation_psi=1.0)
+       
         ## Texture Network
         ws_geo = ws_geo.to(torch.float32).unbind(dim=1)
         

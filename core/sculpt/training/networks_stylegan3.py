@@ -549,38 +549,7 @@ class Generator(torch.nn.Module):
 
         self.only_disp_img = only_disp_img
         self.resume_pretrain_cape= resume_pretrain_cape
-
-        # head_vertices_temp = np.load('../data/smpl_head_verts_indices.npy')
-        # hand_vertices_temp = np.load('../data/smpl_hand_feet_verts_indices.npy')
-        # head_vertices = np.hstack((head_vertices_temp, hand_vertices_temp))
-
-        # head_verts_mask = torch.ones(6890)
-        # head_verts_mask[head_vertices] = 0.0
-        # self.register_buffer('head_verts_mask', head_verts_mask)
-
-        # # Load part masks
-
-        # part_0 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_0.png')[:, :, :3]
-        # part_1 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_1.png')[:, :, :3]
-        # part_2 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_2.png')[:, :, :3]
-        # part_3 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_3.png')[:, :, :3]
-        # part_4 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_4.png')[:, :, :3]
-        # part_5 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_5.png')[:, :, :3]
-        # part_6 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_6.png')[:, :, :3]
-        # part_7 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_7.png')[:, :, :3]
-        # part_8 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_8.png')[:, :, :3]
-        # part_9 = plt.imread('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/smpl_parts_256/part_9.png')[:, :, :3]
-
-        # parts = torch.from_numpy(np.concatenate((part_0, part_1, part_2, part_3, part_4, part_5, part_6, part_7, part_8, part_9), 2))
-
-        # self.register_buffer('smpl_uv_parts', parts)
-
-        # parts_indexing = torch.from_numpy(np.load('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/vertex2channel_indexlist_2048.npy')).type(torch.int32)
-        # parts_indexing_repeate = torch.repeat_interleave(parts_indexing, 3).reshape(-1,3)
-        # parts_indexing_repeate_index = 3*parts_indexing_repeate + ((torch.Tensor([[0,1,2]]).type(torch.int32)) + torch.arange(6890).unsqueeze(1)*30)
-        
-        # self.register_buffer('parts_indexing_repeate_index', parts_indexing_repeate_index.type(torch.int32))
-
+ 
         self.disp_scale = disp_scale
 
         smpl_uv_mask = np.load(render_kwargs.SMPL_uv_mask_path)
@@ -594,12 +563,7 @@ class Generator(torch.nn.Module):
         else:
             self.threshold_layer = torch.nn.Sigmoid()
 
-        # if self.spiral_conv:
-        #     spiral_list = torch.tensor(np.load('/is/cluster/work/ssanyal/project_4/data/stylegan3/smpl_uv_mask/spiralnetPlusPlus_smpl_spirallistfrom_SMPLUV.npy'))
-        #     self.spiral_conv_layer_1  = SpiralConv(3,3,spiral_list)
-        #     self.spiral_conv_layer_2  = SpiralConv(3,3,spiral_list)
-
-
+     
 
     def forward(self, z, c, body_shape, body_pose, body_cam, G_geometry=None, truncation_psi=1, truncation_cutoff=None, update_emas=False, **synthesis_kwargs):
         if self.conformnet:
@@ -625,10 +589,7 @@ class Generator(torch.nn.Module):
         x = self.synthesis.input(ws[0])
         x_geo = G_geometry.synthesis.input(ws_geo[0])
         for name, w, w_geo in zip(self.synthesis.layer_names, ws[1:], ws_geo[1:]):
-            # print(name)
-            # if name.split('_')[0] == 'L0' or name.split('_')[0] == 'L1' or name.split('_')[0] == 'L2' or \
-            #     name.split('_')[0] == 'L5' or name.split('_')[0] == 'L6' or name.split('_')[0] == 'L7' or \
-            #         name.split('_')[0] == 'L8' or name.split('_')[0] == 'L9':
+       
 
             x = x + x_geo
             x_geo = getattr(G_geometry.synthesis, name)(x_geo, w_geo, update_emas=False, **synthesis_kwargs)
@@ -669,24 +630,7 @@ class Generator(torch.nn.Module):
         disp_img = self.synthesis(ws, update_emas=update_emas, **synthesis_kwargs)
         disp_img_out = disp_img * 1.0
 
-        # if self.seperate_disp_map:
-
-        #     if not self.sep_disp_map_sampling:
-        #         disp_img = disp_img * self.smpl_uv_parts.unsqueeze(0).permute(0,3,1,2)
-
-        #     disp_img_2 = disp_img * self.smpl_uv_parts.unsqueeze(0).permute(0,3,1,2)
-
-        #     disp_img_out = disp_img_2[:, :3, :, :] + disp_img_2[:, 3:6, :, :] + disp_img_2[:, 6:9, :, :] + disp_img_2[:,9:12, :, :] \
-        #                     + disp_img_2[:, 12:15, :, :] + disp_img_2[:, 15:18, :, :] + disp_img_2[:, 18:21, :, :] + disp_img_2[:, 21:24, :, :] \
-        #                     + disp_img_2[:, 24:27, :, :] + disp_img_2[:, 27:, :, :] \
-        #                     + (self.smpl_uv_mask2.unsqueeze(0).repeat(3, 1, 1)).unsqueeze(0).repeat(disp_img.shape[0], 1, 1, 1)
-
-        #     if self.only_disp_img:
-
-        #         disp_img = disp_img[:, :3, :, :] + disp_img[:, 3:6, :, :] + disp_img[:, 6:9, :, :] + disp_img[:,9:12, :, :] \
-        #                         + disp_img[:, 12:15, :, :] + disp_img[:, 15:18, :, :] + disp_img[:, 18:21, :, :] + disp_img[:, 21:24, :, :] \
-        #                         + disp_img[:, 24:27, :, :] + disp_img[:, 27:, :, :]
-
+      
         if self.mask_disp_map:
             disp_img = disp_img * (self.smpl_uv_mask.unsqueeze(0).repeat(disp_img.shape[1], 1, 1)).unsqueeze(0).repeat(disp_img.shape[0], 1, 1, 1) \
                 + (self.smpl_uv_mask2.unsqueeze(0).repeat(disp_img.shape[1], 1, 1)).unsqueeze(0).repeat(disp_img.shape[0], 1, 1, 1)
@@ -695,14 +639,7 @@ class Generator(torch.nn.Module):
             if self.seperate_disp_map:
                 return disp_img, 0., disp_img_out
             return disp_img, 0., disp_img_out
-        # # verts = self.smpl_body(torch.zeros(3, 6890, 3).to('cuda').type(torch.float32), torch.zeros(3, 69).to('cuda').type(torch.float32), torch.zeros(3, 3).to('cuda').type(torch.float32))
-        # # normal_img = self.Normalrender(verts).permute(0.3,1,2)
-        # vert_disps = self.displacement_Layer(disp_img)
-        # clothed_body_shape = body_shape + vert_disps
-        # posed_body = self.smpl_body(clothed_body_shape, body_pose[:, 3:], body_pose[:, :3])
-        # img = self.Normalrender(clothed_body_shape).permute(0,3,1,2)
-        # ipdb.set_trace()
-        
+      
         if self.texture_render:
             if c.shape[1] == G_geometry.c_dim:
                 ws_geo = G_geometry.mapping(z, c, truncation_psi=1)
@@ -773,79 +710,7 @@ class Generator(torch.nn.Module):
 
         # ipdb.set_trace()
         return img.permute(0,3,1,2), mesh, disp_img_out
-
-#----------------------------------------------------------------------------
-
-
-# @persistence.persistent_class
-# class Generator_onlydisps(torch.nn.Module):
-#     def __init__(self,
-#         z_dim,                      # Input latent (Z) dimensionality.
-#         c_dim,                      # Conditioning label (C) dimensionality.
-#         w_dim,                      # Intermediate latent (W) dimensionality.
-#         img_resolution,             # Output resolution.
-#         img_channels,               # Number of output color channels.
-#         mask_disp_map,              # mask the displacement maps with SMPL UV mask
-#         mapping_kwargs      = {},   # Arguments for MappingNetwork.
-#         render_kwargs       = {},   # Arguments for Rendering Pipeline.
-#         **synthesis_kwargs,         # Arguments for SynthesisNetwork.
-#     ):
-#         super().__init__()
-#         self.z_dim = z_dim
-#         self.c_dim = c_dim
-#         self.w_dim = w_dim
-#         self.img_resolution = img_resolution
-#         self.img_channels = img_channels
-#         # self.synthesis = SynthesisNetwork(w_dim=w_dim, img_resolution=img_resolution, img_channels=img_channels, **synthesis_kwargs)
-#         # self.num_ws = self.synthesis.num_ws
-#         # self.mapping = MappingNetwork(z_dim=z_dim, c_dim=c_dim, w_dim=w_dim, num_ws=self.num_ws, **mapping_kwargs)
-#         self.Normalrender = NormalRender(img_size=img_resolution, **render_kwargs)
-#         # ipdb.set_trace()
-#         self.mask_disp_map = mask_disp_map
-#         self.smpl_body = SMPL_Layer(**render_kwargs)
-#         self.displacement_Layer = displacement_Layer(img_resolution, **render_kwargs)
-
-#         optimisable_disp_verts = torch.full((6890, 3), 0.0) # torch.randn(6890, 3) * 0.01 #
-#         self.disp_verts = torch.nn.Parameter(optimisable_disp_verts)
-
-#         head_vertices_temp = np.load('/ps/project/tag_3d/data/smpl/smpl_parts/smpl_head_verts_indices.npy')
-#         hand_vertices_temp = np.load('/ps/project/tag_3d/data/smpl/smpl_parts/smpl_hand_feet_verts_indices.npy')
-#         head_vertices = np.hstack((head_vertices_temp, hand_vertices_temp))
-
-#         head_verts_mask = torch.ones_like(self.disp_verts[:, 0])
-#         head_verts_mask[head_vertices] = 0.0
-#         self.register_buffer('head_verts_mask', head_verts_mask)
-
-#         smpl_uv_mask = np.load(render_kwargs.SMPL_uv_mask_path)
-#         smpl_uv_mask2 = deepcopy(smpl_uv_mask)
-#         smpl_uv_mask2 = smpl_uv_mask - 1
-#         # ipdb.set_trace()
-#         self.register_buffer('smpl_uv_mask', torch.from_numpy(smpl_uv_mask))
-#         self.register_buffer('smpl_uv_mask2', torch.from_numpy(smpl_uv_mask2))
-#         self.threshold_layer = torch.nn.Sigmoid() #torch.nn.Tanh()
-
-
-
-#     def forward(self, z, c, body_shape, body_pose, body_cam, truncation_psi=1, truncation_cutoff=None, update_emas=False, **synthesis_kwargs):
-#         # ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff, update_emas=update_emas)
-#         # disp_img = self.synthesis(ws, update_emas=update_emas, **synthesis_kwargs)
-
-#         # if self.mask_disp_map:
-#         #     disp_img = disp_img * (self.smpl_uv_mask.unsqueeze(0).repeat(disp_img.shape[1], 1, 1)).unsqueeze(0).repeat(disp_img.shape[0], 1, 1, 1) \
-#         #         + (self.smpl_uv_mask2.unsqueeze(0).repeat(disp_img.shape[1], 1, 1)).unsqueeze(0).repeat(disp_img.shape[0], 1, 1, 1)
-
-#         # # verts = self.smpl_body(torch.zeros(3, 6890, 3).to('cuda').type(torch.float32), torch.zeros(3, 69).to('cuda').type(torch.float32), torch.zeros(3, 3).to('cuda').type(torch.float32))
-#         # # normal_img = self.Normalrender(verts).permute(0.3,1,2)
-#         # ipdb.set_trace()
-#         vert_disps = self.threshold_layer(self.disp_verts * self.head_verts_mask[:, None]) * 0.1 - 0.05 #self.displacement_Layer(disp_img)
-#         clothed_body_shape = body_shape + vert_disps.unsqueeze(0).repeat(body_shape.shape[0], 1, 1)
-#         posed_body = self.smpl_body(clothed_body_shape, body_pose[:, 3:], body_pose[:, :3])
-#         img, mesh = self.Normalrender(posed_body, body_cam=body_cam) #img, _ = self.Normalrender(clothed_body_shape)
-#         # ipdb.set_trace()
-#         return img.permute(0,3,1,2), mesh
-
-# #----------------------------------------------------------------------------
-
+ 
 @persistence.persistent_class
 class SpiralConv(torch.nn.Module):
     def __init__(self, in_channels, out_channels, indices, dim=1):

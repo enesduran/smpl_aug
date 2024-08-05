@@ -12,10 +12,7 @@ from pytorch3d.structures import Meshes
 import numpy as np
 from smplx import SMPL as _SMPL
 from torch_utils import persistence
-from training.lbs import lbs
-import ipdb
-
-
+ 
 @persistence.persistent_class
 class NormalRender(nn.Module):
     def __init__(
@@ -331,51 +328,7 @@ class SMPL_Layer(nn.Module):
         self.smpl = _SMPL(smpl_model_path, create_body_pose=False, create_betas=False, create_global_orient=False, create_transl=False)
         ICON_compatible_rendering = torch.tensor([1.0, -1.0, -1.0])
         self.register_buffer('ICON_compatible_rendering', ICON_compatible_rendering)
-        
-
-    def forward(self, b_shape, body_pose, global_orient, transl = None, ICON_compatible_rndring_sub=[0.0, 0.0, 0.0], pose2rot: bool = True):
-
-        full_pose = torch.cat([global_orient, body_pose], dim=1)
-
-        batch_size = max(b_shape.shape[0], global_orient.shape[0],
-                         body_pose.shape[0])
-
-        if b_shape.shape[0] != batch_size:
-            num_repeats = int(batch_size / b_shape.shape[0])
-            b_shape = b_shape.expand(num_repeats, -1)
-
-        vertices, joints = lbs(b_shape, full_pose, self.smpl.v_template.to(full_pose),
-                               self.smpl.shapedirs.to(full_pose), self.smpl.posedirs.to(full_pose),
-                               self.smpl.J_regressor.to(full_pose), self.smpl.parents,
-                               self.smpl.lbs_weights.to(full_pose), pose2rot=pose2rot, cano_shape=self.cano_shape)
-
-        # joints = self.vertex_joint_selector(vertices, joints)
-        # # Map the joints to the current dataset
-        # if self.joint_mapper is not None:
-        #     joints = self.joint_mapper(joints)
-
-
-        if transl is not None: # if apply_trans:
-            # ipdb.set_trace()
-            joints += transl.unsqueeze(dim=1)
-            vertices += transl.unsqueeze(dim=1)
-            
-            vertices = vertices * self.ICON_compatible_rendering.to(vertices) - ICON_compatible_rndring_sub
-            joints = joints * self.ICON_compatible_rendering.to(joints) - ICON_compatible_rndring_sub
-
-            return vertices, joints
-
-        # output = SMPLOutput(vertices=vertices if return_verts else None,
-        #                     global_orient=global_orient,
-        #                     body_pose=body_pose,
-        #                     joints=joints,
-        #                     betas=b_shapes,
-        #                     full_pose=full_pose if return_full_pose else None)
-
-        return vertices, joints
-
-
-
+         
 @persistence.persistent_class
 class displacement_Layer(nn.Module):
     def __init__(self, img_size, unique_v2p_mapper_path, **render_kwargs):
