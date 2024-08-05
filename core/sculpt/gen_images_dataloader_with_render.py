@@ -81,7 +81,7 @@ class SCULPT(object):
         disp_img_geo = (UV_geo * 0.5 + 0.5) * 2 * 0.071 - 0.071
         vert_disps = self.G_geometry.displacement_Layer(disp_img_geo)
 
-        logger.info(f'Time taken for creating images: {(time.time()-time_start_creation):.2f} seconds')
+        logger.info(f'Time taken for creating {sample_size} garments: {(time.time()-time_start_creation):.2f} seconds')
         return vert_disps
 
         
