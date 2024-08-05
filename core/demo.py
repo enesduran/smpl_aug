@@ -14,17 +14,20 @@
 #
 # Contact: ps-license@tuebingen.mpg.de
 
+import os
 import cv2
 import json
 import torch
 import trimesh 
-torch.set_warn_always(False)
 import smpl_aug 
 import argparse
 import numpy as np
+from tqdm import tqdm
 import torch.nn as nn
+from loguru import logger
+from pytorch3d.io import IO
 from pytorch3d import transforms
-from simkinect.add_noise_smpl_no_discrete import mesh_2_kinectpcd
+from simkinect.add_noise_smpl_no_discrete import mesh2pcd
 from pytorch3d.renderer import RasterizationSettings, MeshRasterizer, PerspectiveCameras
 
 ### compatibility with python 2.7
@@ -63,16 +66,17 @@ class SMPL_WRAPPER(nn.Module):
                             gender=gender, 
                             use_face_contour=use_face_contour,
                             num_betas=num_betas,
-                            # ext=ext,
                             use_pca=False,
                             clothing_option=clothing_option)
 
 
         self.camera_config = camera_config
+        self.camera_config1 = 'camera_configs/kinect_batch_update.json'
         self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
         # reading the image directly in gray with 0 as input 
         self.kinect_dot_pattern = cv2.imread("core/simkinect/data/sample_pattern.png", cv2.IMREAD_GRAYSCALE)
+        self.camera_config_dict = json.load(open(self.camera_config, 'r'))
 
 
     def forward(self, betas, expression, global_orient, transl, reye_pose, leye_pose, 
@@ -112,7 +116,7 @@ class SMPL_WRAPPER(nn.Module):
                 jaw_pose = transforms.axis_angle_to_matrix(jaw_pose.reshape(T, -1, 3))
 
 
-        output = self.model(betas=betas, 
+        return self.model(betas=betas, 
                     expression=expression,
                     global_orient=global_orient,
                     transl=transl,
@@ -124,22 +128,12 @@ class SMPL_WRAPPER(nn.Module):
                     body_pose=body_pose,
                     **kwargs_dict)
                
-        vertices = output.vertices.detach().cpu().numpy().squeeze()
- 
-        trimesh.Trimesh(vertices[30], self.model.faces).export('test.obj')
         
-
-        self.load_cameras(self.camera_config)
-        camera_config_dict = json.load(open(self.camera_config, 'r'))
-
- 
-        mesh_2_kinectpcd(vertices, self.model.faces, camera_config_dict, self.cameras_batch, self.kinect_dot_pattern)
-
     
     def load_data(self, motion_path):
         motion_dict = np.load(motion_path)
 
-        motion_T = min(motion_dict["poses"].shape[0], 120)
+        motion_T = min(motion_dict["poses"].shape[0], 300)
 
         cloth_types = np.ones((motion_T, 6), dtype=np.int64) * 3
         cloth_types[:, 3] = 1
@@ -173,27 +167,61 @@ class SMPL_WRAPPER(nn.Module):
         global_orient = torch.tensor(motion_dict["poses"][:, :3], dtype=torch.float32)[:motion_T]
         betas = torch.tensor(motion_dict["betas"][None, :10], dtype=torch.float32).repeat(motion_T, 1)
         expression = torch.zeros_like(betas)
-         
-        self.forward(betas=betas, 
-                    expression=expression, 
-                    global_orient=global_orient, 
-                    transl=transl, 
-                    reye_pose=reye_pose, 
-                    leye_pose=leye_pose,
-                    jaw_pose=jaw_pose, 
-                    left_hand_pose=left_hand_pose, 
-                    right_hand_pose=right_hand_pose, 
-                    body_pose=body_pose, **kwargs_dict)
+  
+        self.motion_data =  {'betas':betas, 
+                            'expression':expression, 
+                            'global_orient':global_orient, 
+                            'transl':transl, 
+                            'reye_pose':reye_pose, 
+                            'leye_pose':leye_pose,
+                            'jaw_pose':jaw_pose, 
+                            'left_hand_pose':left_hand_pose, 
+                            'right_hand_pose':right_hand_pose, 
+                            'body_pose':body_pose,
+                            'motion_T':motion_T,
+                            **kwargs_dict}
         
 
     def augment_loop(self):
 
+        # move that into the for loop 
+        output = self(**self.motion_data)
+        vertices = output.vertices.detach().cpu().numpy().squeeze()
+        setting_name = self.camera_config_dict['setting_name']
+ 
+        # load cameras from camera config file
+        self.load_cameras(self.camera_config)
 
-        # try changing camera pose along the way 
+        io_object = IO()
+         
+        # create output directories
+        os.makedirs('outdir/body_meshes', exist_ok=True)
+        os.makedirs(f'outdir/{setting_name}', exist_ok=True)
 
-        pass
+        for i in tqdm(range(self.motion_data['motion_T'])):
+            # self.forward(**{key: val[i] for key, val in motion_dict_.items()})
+             
+            depth_gt, depth, noisy_depth, projected_pcd_noised = mesh2pcd(vertices[i], 
+                                                                          self.model.faces, 
+                                                                          self.camera_config_dict, 
+                                                                          self.cameras_batch, 
+                                                                          self.kinect_dot_pattern)
 
+            # save depth for each camera
+            for cam_id in range(len(self.cameras_batch)):
+                cv2.imwrite(f'outdir/{setting_name}/perfect_depth_{i}_{cam_id}.png', depth_gt[cam_id] * 255)
+                # cv2.imwrite(f'outdir/{setting_name}/processed_depth_{i}_{cam_id}.png', depth[cam_id] * 255)
+                cv2.imwrite(f'outdir/{setting_name}/noised_depth_{i}_{cam_id}.png', noisy_depth[cam_id] * 255)
+                io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}/{i}_{cam_id}.ply')
 
+            if i % 10 == 0:
+                # try changing camera pose along the way 
+                self.update_camera(self.camera_config1)
+
+ 
+            trimesh.Trimesh(vertices[i], self.model.faces).export(f'outdir/body_meshes/{i}.obj')
+        
+ 
     def load_cameras(self, camera_config_filepath):
         with open(camera_config_filepath, 'r') as f:
             camera_config_dict = json.load(f)
@@ -224,15 +252,22 @@ class SMPL_WRAPPER(nn.Module):
         camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T': _cam_['cam_T']} for _cam_ in camera_config_dict["cameras"]}
         num_cameras = len(camera_ext_dict)
 
-        cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()])
-        cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()])
+        cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()]).to(self.device)
+        cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()]).to(self.device)
         image_size = (camera_config_dict['height'], camera_config_dict['width'])
         fx, fy = camera_config_dict['focal_length_x'], camera_config_dict['focal_length_y']
 
-        focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2)
-        image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2)
-
-        import ipdb; ipdb.set_trace()
+        focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2).to(self.device)
+        image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2).to(self.device)
+     
+        # tested. works fine
+        logger.info('Updating camera parameters')
+        self.cameras_batch.R = cam_batch_R
+        self.cameras_batch.T = cam_batch_T
+        self.cameras_batch.focal_length = focal_length
+        self.cameras_batch.image_size = image_size_mult
+ 
+ 
         
 
         
@@ -269,3 +304,4 @@ if __name__ == '__main__':
                                use_layer=args.use_layer_instance) 
     
     wrapper_obj.load_data(args.motion_path)
+    wrapper_obj.augment_loop()
