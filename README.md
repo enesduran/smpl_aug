@@ -8,20 +8,19 @@ We provide a framework for depth rendering and data augmentation of SMPL body mo
 
 Huge shoutout to [SMPLX](https://github.com/vchoutas/smplx), [SCULPT](https://github.com/soubhiksanyal/SCULPT_release), [SimKinect](https://github.com/ankurhanda/simkinect) implementations. 
 
-# Creating Environment 
+### Creating Environment 
 
 Create envrionment by running:
 
-```conda env create -f env.yml```
+```
+conda env create -f env.yml
+```
 
-before running load cuda 12.1
-module load cuda/12.1
-
-# Setup 
+### Setup 
 
 Here are the instructions for setting SCULPT and SMPL models.  
 
-### Body Models 
+#### Body Models 
 
 Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version 1.1.0 and put them under `body_models` folder. 
 
@@ -42,11 +41,11 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
 (*) optional
 ```
 
-### SCULPT (Optional)
+#### SCULPT (Optional)
 
 Our framework uses SCULPT as garment generation model. If you want to make use of this optional feature go to [SCULPT webpage](https://sculpt.is.tue.mpg.de/) and register. Download Pre-trained weights for the Geometry Network  and place them under `smplx/sculpt/data`
 
-# Run Demo 
+### Run Demo 
 
 Having set environment up, downloaded models and placed them under the corresponding paths, you are good to go! To run the augmentation:
  

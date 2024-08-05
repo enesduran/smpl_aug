@@ -22,5 +22,5 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
 **Note**: You have to perform merging operation of the downloaded SMPLH model with the MANO model. To this end run for each gender model: 
 
 ```
-python core/tools/merge_smplh_mano.py --smplh-fn body_models/smplh/SMPLH_MALE.npz --mano-right-fn body_models/mano/MANO_RIGHT.pkl --mano-left-fn body_models/mano/MANO_LEFT.pkl --output-folder body_models/smplh_mano
+python core/tools/merge_smplh_mano.py --smplh-fn body_models/smplh/SMPLH_MALE.npz --mano-right-fn body_models/mano/MANO_RIGHT.pkl --mano-left-fn body_models/mano/MANO_LEFT.pkl --output-folder body_models/smplh
 ```
