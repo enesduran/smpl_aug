@@ -131,6 +131,91 @@ def filterDisp(disp, dot_pattern_, invalid_disp_, size_filt_):
 
     return out_disp
 
+def filterDisp_short(disp, dot_pattern_, invalid_disp_, size_filt_):
+
+    xx = np.linspace(0, size_filt_-1, size_filt_)
+    yy = np.linspace(0, size_filt_-1, size_filt_)
+
+    xf, yf = np.meshgrid(xx, yy)
+
+    xf = xf - int(size_filt_ / 2.0)
+    yf = yf - int(size_filt_ / 2.0)
+
+    sqr_radius = (xf**2 + yf**2)
+    vals = sqr_radius * 1.2**2 
+
+    vals[vals==0] = 1 
+    weights_ = 1 /vals  
+
+    fill_weights = 1 / ( 1 + sqr_radius)
+    fill_weights[sqr_radius > size_filt_] = -1.0 
+
+    disp_rows, disp_cols = disp.shape 
+    dot_pattern_rows, dot_pattern_cols = dot_pattern_.shape
+
+    lim_rows = disp_rows - size_filt_
+    lim_cols = disp_cols - size_filt_
+
+    center = int(size_filt_ / 2.0)
+
+    window_inlier_distance_ = 0.1
+
+    out_disp = np.ones_like(disp) * invalid_disp_
+
+    interpolation_map = np.zeros_like(disp)
+
+    for r in range(0, lim_rows):
+
+        for c in range(0, lim_cols):
+            r_dot, c_dot = r, c
+            if (dot_pattern_rows - size_filt_ < r):
+                r_dot = r % (dot_pattern_rows - size_filt_)
+
+            if (dot_pattern_cols - size_filt_ < c):
+                c_dot = c % (dot_pattern_cols - size_filt_)
+
+            if dot_pattern_[r_dot+center, c_dot+center] > 0:
+                                
+                # c and r are the top left corner 
+                window  = disp[r:r+size_filt_, c:c+size_filt_] 
+                dot_win = dot_pattern_[r_dot:r_dot+size_filt_, c_dot:c_dot+size_filt_] 
+  
+                valid_dots = dot_win[window < invalid_disp_]
+
+                n_valids = np.sum(valid_dots) / 255.0 
+                n_thresh = np.sum(dot_win) / 255.0 
+
+                if n_valids > n_thresh / 1.2: 
+
+                    mean = np.mean(window[window < invalid_disp_])
+
+                    diffs = np.abs(window - mean)
+                    diffs = np.multiply(diffs, weights_)
+
+                    cur_valid_dots = np.multiply(np.where(window<invalid_disp_, dot_win, 0), 
+                                                 np.where(diffs < window_inlier_distance_, 1, 0))
+
+                    n_valids = np.sum(cur_valid_dots) / 255.0
+
+                    if n_valids > n_thresh / 1.2: 
+                    
+                        accu = window[center, center] 
+
+                        assert(accu < invalid_disp_)
+
+                        #out_disp[r+center, c + center] = round((accu)*8.0) / 8.0 # discretization
+                        out_disp[r+center, c + center] = accu ########################
+
+                        interpolation_window = interpolation_map[r:r+size_filt_, c:c+size_filt_]
+                        disp_data_window     = out_disp[r:r+size_filt_, c:c+size_filt_]
+
+                        substitutes = np.where(interpolation_window < fill_weights, 1, 0)
+                        interpolation_window[substitutes==1] = fill_weights[substitutes ==1 ]
+
+                        disp_data_window[substitutes==1] = out_disp[r+center, c+center]                 
+
+    return out_disp
+
 def filterDisp_(disp, dot_pattern_, invalid_disp_, size_filt_):
     """
     Filter the disparity map using the dot pattern and the disparity map
@@ -290,21 +375,13 @@ def recover_pcd_from_depth(depth_noised_tensor, camera):
     return projected_pcd_noised_list
 
 
-def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""):
+def mesh_2_kinectpcd(vertices, faces, camera_config_dict, cameras_batch, depth_noise_file=""):
 
     time_start = time.time()
-    
+
 
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
-    # read config file
-    if camera_config_file == '':
-        camera_config_file = 'camera_configs/kinect.json'
-
-    with open(camera_config_file, 'r') as f:
-        camera_config_dict = json.load(f)
-
-    
     upsample_mesh = False
 
     image_size = (camera_config_dict['height'], camera_config_dict['width'])
@@ -314,12 +391,7 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
     camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T': _cam_['cam_T']} for _cam_ in camera_config_dict["cameras"]}
     num_cameras = len(camera_ext_dict)
 
-    if depth_noise_file == "":
-        depth_noise_file = "core/simkinect/data/sample_pattern.png"
-
-    # reading the image directly in gray with 0 as input 
-    kinect_dot_pattern = cv2.imread(depth_noise_file, cv2.IMREAD_GRAYSCALE)
-    
+ 
     # various variables to handle the noise modelling
     scale_factor  = 100.0   # converting depth from m to cm 
     baseline_m    = 0.075   # baseline in m 0.075
@@ -359,13 +431,12 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
                             faces=[torch.tensor(faces.astype(np.int32)).to(device) for _ in range(num_cameras)])
 
     
-        cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()])
-        cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()])
+        # cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()])
+        # cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()])
 
-        focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2)
-        image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2)
-        
-        cameras_batch = PerspectiveCameras(focal_length=focal_length, device=device, R=cam_batch_R, T=cam_batch_T, image_size=image_size_mult)
+        # focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2)
+        # image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2)
+        # cameras_batch = PerspectiveCameras(focal_length=focal_length, device=device, R=cam_batch_R, T=cam_batch_T, image_size=image_size_mult)
 
         # minmax scaling 
         depth_gt_unscaled = capture_mesh_depth(meshes, cameras_batch, image_size=image_size)
@@ -376,6 +447,10 @@ def mesh_2_kinectpcd(vertices, faces, camera_config_file="", depth_noise_file=""
         depth_f = 10 * baseline_m / (depth_interp + 1e-10)
          
         out_disp = filterDisp(depth_f[0], kinect_dot_pattern, INVALID_DISP_THRESHOLD, filter_size_window)[None]
+        # out_disp_short = filterDisp_short(depth_f[0], kinect_dot_pattern, INVALID_DISP_THRESHOLD, filter_size_window)[None]
+        # abs(out_disp - out_disp_short).sum()
+
+
         # out_disp = filterDisp_(depth_f, kinect_dot_pattern, INVALID_DISP_THRESHOLD, filter_size_window)[None]
 
         # depth = fx * baseline_m / out_disp

@@ -14,6 +14,8 @@
 #
 # Contact: ps-license@tuebingen.mpg.de
 
+import cv2
+import json
 import torch
 import trimesh 
 torch.set_warn_always(False)
@@ -23,6 +25,7 @@ import numpy as np
 import torch.nn as nn
 from pytorch3d import transforms
 from simkinect.add_noise_smpl_no_discrete import mesh_2_kinectpcd
+from pytorch3d.renderer import RasterizationSettings, MeshRasterizer, PerspectiveCameras
 
 ### compatibility with python 2.7
 np.str = np.str_
@@ -39,7 +42,6 @@ class SMPL_WRAPPER(nn.Module):
                  model_folder,
                  body_model_type,
                  clothing_option,
-                 ext='npz',
                  gender='neutral',
                  num_betas=10,
                  camera_config="",
@@ -61,12 +63,16 @@ class SMPL_WRAPPER(nn.Module):
                             gender=gender, 
                             use_face_contour=use_face_contour,
                             num_betas=num_betas,
-                            ext=ext,
+                            # ext=ext,
                             use_pca=False,
                             clothing_option=clothing_option)
 
 
         self.camera_config = camera_config
+        self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+
+        # reading the image directly in gray with 0 as input 
+        self.kinect_dot_pattern = cv2.imread("core/simkinect/data/sample_pattern.png", cv2.IMREAD_GRAYSCALE)
 
 
     def forward(self, betas, expression, global_orient, transl, reye_pose, leye_pose, 
@@ -87,66 +93,68 @@ class SMPL_WRAPPER(nn.Module):
 
        
         if self.use_layer:
-            
             T = body_pose.shape[0]
             
             # Layers accept rotmat only. This is a legacy of smplx library.
-            body_pose_rotmat = transforms.axis_angle_to_matrix(body_pose.reshape(T, -1, 3))
-            global_orient_rotmat = transforms.axis_angle_to_matrix(global_orient.reshape(T, -1, 3))
+            body_pose = transforms.axis_angle_to_matrix(body_pose.reshape(T, -1, 3))
+            global_orient = transforms.axis_angle_to_matrix(global_orient.reshape(T, -1, 3))
 
-            output = self.model_layer(betas=betas, 
-                        expression=expression,
-                        global_orient=global_orient_rotmat,
-                        transl=transl,
-                        reye_pose=reye_pose,
-                        leye_pose=leye_pose,
-                        jaw_pose=jaw_pose,
-                        left_hand_pose=left_hand_pose,
-                        right_hand_pose=right_hand_pose,
-                        body_pose=body_pose_rotmat,
-                        **kwargs_dict)
-            
-        else:
-            output = self.model(betas=betas, 
-                        expression=expression,
-                        global_orient=global_orient,
-                        transl=transl,
-                        reye_pose=reye_pose,
-                        leye_pose=leye_pose,
-                        jaw_pose=jaw_pose,
-                        left_hand_pose=left_hand_pose,
-                        right_hand_pose=right_hand_pose,
-                        body_pose=body_pose,
-                        **kwargs_dict)
-           
+            # weirdly, SMPLHLayer and SMPLXLayer have different hand pose representations
+            if self.body_model_type == 'smplh':	
+                left_hand_pose = transforms.axis_angle_to_matrix(left_hand_pose.reshape(T, -1, 3))
+                right_hand_pose = transforms.axis_angle_to_matrix(right_hand_pose.reshape(T, -1, 3))
+
+            elif self.body_model_type == 'smplx':
+                left_hand_pose = transforms.axis_angle_to_matrix(left_hand_pose.reshape(T, -1, 3))
+                right_hand_pose = transforms.axis_angle_to_matrix(right_hand_pose.reshape(T, -1, 3))
+                reye_pose = transforms.axis_angle_to_matrix(reye_pose.reshape(T, -1, 3))
+                leye_pose = transforms.axis_angle_to_matrix(leye_pose.reshape(T, -1, 3))
+                jaw_pose = transforms.axis_angle_to_matrix(jaw_pose.reshape(T, -1, 3))
+
+
+        output = self.model(betas=betas, 
+                    expression=expression,
+                    global_orient=global_orient,
+                    transl=transl,
+                    reye_pose=reye_pose,
+                    leye_pose=leye_pose,
+                    jaw_pose=jaw_pose,
+                    left_hand_pose=left_hand_pose,
+                    right_hand_pose=right_hand_pose,
+                    body_pose=body_pose,
+                    **kwargs_dict)
+               
         vertices = output.vertices.detach().cpu().numpy().squeeze()
  
-        trimesh.Trimesh(vertices[0], self.model.faces).export('test.obj')
+        trimesh.Trimesh(vertices[30], self.model.faces).export('test.obj')
         
 
-        mesh_2_kinectpcd(vertices, self.model.faces, camera_config_file=self.camera_config)
+        self.load_cameras(self.camera_config)
+        camera_config_dict = json.load(open(self.camera_config, 'r'))
+
+ 
+        mesh_2_kinectpcd(vertices, self.model.faces, camera_config_dict, self.cameras_batch, self.kinect_dot_pattern)
 
     
-    def augment(self, motion_path):
+    def load_data(self, motion_path):
         motion_dict = np.load(motion_path)
 
-        motion_T = motion_dict["poses"].shape[0]
-        motion_T = min(motion_T, 120)
-
+        motion_T = min(motion_dict["poses"].shape[0], 120)
 
         cloth_types = np.ones((motion_T, 6), dtype=np.int64) * 3
         cloth_types[:, 3] = 1
         kwargs_dict = {'cloth_types': cloth_types}
 
-        
         transl = jaw_pose = reye_pose = leye_pose = jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
         right_hand_pose = left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
         
-        
         if self.body_model_type == 'smpl':
             body_pose = torch.tensor(motion_dict["poses"][:, 3:72], dtype=torch.float32)[:motion_T]
+            # body_pose = torch.zeros_like(body_pose)
         elif self.body_model_type == 'smplh':
-            import ipdb; ipdb.set_trace()
+            body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
+            left_hand_pose = torch.tensor(motion_dict["poses"][:, 66:111], dtype=torch.float32)[:motion_T]
+            right_hand_pose = torch.tensor(motion_dict["poses"][:, 111:], dtype=torch.float32)[:motion_T]
         elif self.body_model_type == 'smplx':
             body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
             jaw_pose = torch.tensor(motion_dict["poses"][:, 66:69], dtype=torch.float32)[:motion_T]
@@ -156,7 +164,7 @@ class SMPL_WRAPPER(nn.Module):
             right_hand_pose = torch.tensor(motion_dict["poses"][:, 120:165], dtype=torch.float32)[:motion_T]
 
         elif self.body_model_type == 'mano':
-            body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
+            raise NotImplementedError
         elif self.body_model_type == 'flame':
             raise NotImplementedError
         else:
@@ -166,12 +174,68 @@ class SMPL_WRAPPER(nn.Module):
         betas = torch.tensor(motion_dict["betas"][None, :10], dtype=torch.float32).repeat(motion_T, 1)
         expression = torch.zeros_like(betas)
          
-        self.forward(betas, expression, global_orient, transl, reye_pose, leye_pose,
-                    jaw_pose, left_hand_pose, right_hand_pose, body_pose, **kwargs_dict)
+        self.forward(betas=betas, 
+                    expression=expression, 
+                    global_orient=global_orient, 
+                    transl=transl, 
+                    reye_pose=reye_pose, 
+                    leye_pose=leye_pose,
+                    jaw_pose=jaw_pose, 
+                    left_hand_pose=left_hand_pose, 
+                    right_hand_pose=right_hand_pose, 
+                    body_pose=body_pose, **kwargs_dict)
+        
+
+    def augment_loop(self):
+
+
+        # try changing camera pose along the way 
+
+        pass
+
+
+    def load_cameras(self, camera_config_filepath):
+        with open(camera_config_filepath, 'r') as f:
+            camera_config_dict = json.load(f)
+
+        camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T': _cam_['cam_T']} for _cam_ in camera_config_dict["cameras"]}
+        num_cameras = len(camera_ext_dict)
+
+        cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()])
+        cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()])
+        image_size = (camera_config_dict['height'], camera_config_dict['width'])
+        fx, fy = camera_config_dict['focal_length_x'], camera_config_dict['focal_length_y']
+
+        focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2)
+        image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2)
+
+        self.cameras_batch = PerspectiveCameras(focal_length=focal_length, device=self.device, R=cam_batch_R, T=cam_batch_T, image_size=image_size_mult)
+ 
+
+    def update_camera(self, camera_config_filepath):
+        
+        # make sure load_cameras is called before this function
+        assert hasattr(self, 'cameras_batch'), 'Please load the cameras first using load_cameras function'
+
+
+        with open(camera_config_filepath, 'r') as f:
+            camera_config_dict = json.load(f)
+
+        camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T': _cam_['cam_T']} for _cam_ in camera_config_dict["cameras"]}
+        num_cameras = len(camera_ext_dict)
+
+        cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()])
+        cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()])
+        image_size = (camera_config_dict['height'], camera_config_dict['width'])
+        fx, fy = camera_config_dict['focal_length_x'], camera_config_dict['focal_length_y']
+
+        focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2)
+        image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2)
+
+        import ipdb; ipdb.set_trace()
+        
 
         
-    
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Augmentation Framework Demo')
 
@@ -187,8 +251,8 @@ if __name__ == '__main__':
                         help='The path to the camera configuration')
     parser.add_argument('--gender', type=str, default='neutral',
                         help='The gender of the model')
-    parser.add_argument('--ext', type=str, default='npz',
-                        help='Which extension to use for loading')
+    parser.add_argument('--use-layer-instance', type=bool, default=True,
+                        help='Flag to use the layer instance')
     parser.add_argument('--use-face-contour', default=False,
                         type=lambda arg: arg.lower() in ['true', '1'],
                         help='Compute the contour of the face')
@@ -197,11 +261,11 @@ if __name__ == '__main__':
 
     wrapper_obj = SMPL_WRAPPER(args.model_folder,
                                args.body_model_type,
-                               ext=args.ext,
                                gender=args.gender,
                                num_betas=10,
                                camera_config=args.camera_config,
                                use_face_contour=args.use_face_contour, 
-                               clothing_option=args.clothing_option) 
+                               clothing_option=args.clothing_option,
+                               use_layer=args.use_layer_instance) 
     
-    wrapper_obj.augment(args.motion_path)
+    wrapper_obj.load_data(args.motion_path)
