@@ -49,17 +49,17 @@ Our framework uses SCULPT as garment generation model. If you want to make use o
 
 Having set environment up, downloaded models and placed them under the corresponding paths, you are good to go! To run the augmentation:
  
-For forwarding smpl and getting corresponding kinect depth and point cloud: <br /> 
+To forwarding SMPL and getting corresponding kinect depth and point cloud: <br /> 
 ```
 python core/demo.py --model-folder body_models --body-model-type smpl --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json
 ``` 
 
-For smph: <br /> 
+For SMPLH: <br /> 
 ```
 python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smplh.npz --camera-config camera_configs/kinect.json
 ``` 
 
-For smplx: <br /> 
+For SMPLX: <br /> 
 ```
 python core/demo.py --model-folder body_models --body-model-type smplx --motion-path motion_data/sample_motion_data_smplx.npz --camera-config camera_configs/kinect.json
 ``` 
@@ -69,10 +69,12 @@ The outputs will be saved under `outdir/`
 
 TODO (with importance order)
 
-1) Decide on the final architecture to continue and rewrite the codebase
-2) Further purge the SCULPT and SimKInect codebase.
-3) Extend it to other body models SMPLX, SMPLH without garment support 
-4) Providing 3D scene or already rendered depth image of the scene as an optional argument 
+1) Further purge the SCULPT and SimKInect codebase.
+2) Debug batch depth noising 
+3) Batch point cloud extraction 
+4) Recovered point cloud rotation 
 5) Formulating tasks to be used in tandem with this framework 
+    Providing 3D scene or already rendered depth image of the scene as an optional argument 
+
 6) Write the report 
 7) Presentation 
