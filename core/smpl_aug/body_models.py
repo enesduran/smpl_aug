@@ -1,17 +1,5 @@
-#  -*- coding: utf-8 -*-
-
-# Max-Planck-Gesellschaft zur Förderung der Wissenschaften e.V. (MPG) is
-# holder of all proprietary rights on this computer program.
-# You can only use this computer program if you have closed
-# a license agreement with MPG or you get the right to use the computer
-# program from someone who is authorized to grant you that right.
-# Any use of the computer program without a valid license is prohibited and
-# liable to prosecution.
-#
-# Copyright©2019 Max-Planck-Gesellschaft zur Förderung
-# der Wissenschaften e.V. (MPG). acting on behalf of its Max Planck Institute
-# for Intelligent Systems. All rights reserved.
-#
+# This code is a modified version of the original code from the SMPL-X project
+# https://github.com/vchoutas/smplx/tree/main
 # Contact: ps-license@tuebingen.mpg.de
 
 import os
@@ -19,13 +7,14 @@ import sys
 import torch
 import numpy as np
 import os.path as osp
-import torch.nn as nn
 from loguru import logger
 from typing import Optional, Dict, Union
+
 
 import smplx 
 from smplx.lbs import lbs
 from smplx.utils import Struct, Tensor, Array, SMPLOutput
+from smpl_aug.body_utils import SMPL_JOINT_MIRROR_DICT, SMPLX_JOINT_MIRROR_DICT, flip_pose
 
 
 class SMPL(smplx.SMPL):
@@ -150,6 +139,7 @@ class SMPL(smplx.SMPL):
         return_verts=True,
         return_full_pose: bool = False,
         pose2rot: bool = True,
+        augment_pose: bool = False,
         **kwargs
     ) -> SMPLOutput:
         ''' Forward pass for the SMPL model
@@ -180,6 +170,8 @@ class SMPL(smplx.SMPL):
                 Return the vertices. (default=True)
             return_full_pose: bool, optional
                 Returns the full axis-angle pose vector (default=False)
+            augment_pose: bool, optional
+                If True, then the pose is augmented through flipping 
 
             Returns
             -------
@@ -197,6 +189,16 @@ class SMPL(smplx.SMPL):
 
         full_pose = torch.cat([global_orient, body_pose], dim=1)
 
+        if augment_pose:
+            augment_idx = torch.tensor(list(SMPL_JOINT_MIRROR_DICT.values())) 
+ 
+            if not pose2rot:
+                full_pose = full_pose[:, augment_idx]
+            else:
+                full_pose = full_pose.reshape(full_pose.shape[0], -1, 3)[:, augment_idx]
+
+            full_pose = flip_pose(full_pose, rotmat_flag= not pose2rot)      
+        
         batch_size = max(betas.shape[0], global_orient.shape[0],
                          body_pose.shape[0])
 
@@ -218,7 +220,6 @@ class SMPL(smplx.SMPL):
 
         # depending on the clothing option, use the SCULPT model or SMPL model to generate human mesh 
         if self.clothing_option!='minimal':
-          
             clothing_displacements = self.sculpt_instance.generate_images(seeds=[7],    # plate code of Antalya
                                                 body_pose=full_pose,
                                                 cloth_types=kwargs.get("cloth_types"),
