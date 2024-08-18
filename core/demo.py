@@ -31,7 +31,7 @@ if __name__ == '__main__':
                         help='The path to the camera configuration')
     parser.add_argument('--gender', type=str, default='neutral',
                         help='The gender of the model')
-    parser.add_argument('--use-layer-instance', type=bool, default=True,
+    parser.add_argument('--use-layer-instance', type=bool, default=False,
                         help='Flag to use the layer instance')
     parser.add_argument('--use-face-contour', default=False,
                         type=lambda arg: arg.lower() in ['true', '1'],

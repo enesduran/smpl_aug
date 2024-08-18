@@ -64,7 +64,8 @@ class SMPL_WRAPPER(nn.Module):
 
 
     def forward(self, betas, expression, global_orient, transl, reye_pose, leye_pose, 
-                jaw_pose, left_hand_pose, right_hand_pose, body_pose, **kwargs_dict):
+                jaw_pose, left_hand_pose, right_hand_pose, body_pose, 
+                augment_pose_flag=False, **kwargs_dict):
         """
         Args:
             betas: torch.Tensor, shape [N, 10]
@@ -110,6 +111,7 @@ class SMPL_WRAPPER(nn.Module):
                     left_hand_pose=left_hand_pose,
                     right_hand_pose=right_hand_pose,
                     body_pose=body_pose,
+                    augment_pose=augment_pose_flag,
                     **kwargs_dict)
                
         
@@ -117,7 +119,10 @@ class SMPL_WRAPPER(nn.Module):
     def load_data(self, motion_path):
         motion_dict = np.load(motion_path)
 
-        motion_T = min(motion_dict["poses"].shape[0], 300)
+        try: 
+            motion_T = motion_dict["poses"].shape[0]
+        except:
+            import ipdb; ipdb.set_trace()
 
         cloth_types = np.ones((motion_T, 6), dtype=np.int64) * 3
         cloth_types[:, 3] = 1
@@ -128,7 +133,6 @@ class SMPL_WRAPPER(nn.Module):
         
         if self.body_model_type == 'smpl':
             body_pose = torch.tensor(motion_dict["poses"][:, 3:72], dtype=torch.float32)[:motion_T]
-            # body_pose = torch.zeros_like(body_pose)
         elif self.body_model_type == 'smplh':
             body_pose = torch.tensor(motion_dict["poses"][:, 3:66], dtype=torch.float32)[:motion_T]
             left_hand_pose = torch.tensor(motion_dict["poses"][:, 66:111], dtype=torch.float32)[:motion_T]
@@ -166,15 +170,13 @@ class SMPL_WRAPPER(nn.Module):
                             **kwargs_dict}
         
 
-    def augment_loop(self, outdir):
+    def augment_loop(self, outdir, augment_pose_flag=False):
 
-        # move that into the for loop 
-        output = self(**self.motion_data)
-        vertices = output.vertices.detach().cpu().numpy().squeeze()
         setting_name = self.camera_config_dict['setting_name']
  
         # load cameras from camera config file
         self.load_cameras(self.camera_config)
+        augment_list = [False] if augment_pose_flag else [False, True]
 
         io_object = IO()
          
@@ -185,32 +187,42 @@ class SMPL_WRAPPER(nn.Module):
         os.makedirs(f'{outdir}/{setting_name}/noised_depth', exist_ok=True)
         os.makedirs(f'{outdir}/{setting_name}/point_cloud', exist_ok=True)
 
+
         for i in tqdm(range(self.motion_data['motion_T'])):
-            # self.forward(**{key: val[i] for key, val in motion_dict_.items()})
-             
-            depth_gt, depth, noisy_depth, projected_pcd_noised = mesh2pcd(vertices[i], 
-                                                                          self.model.faces, 
-                                                                          self.camera_config_dict, 
-                                                                          self.cameras_batch, 
-                                                                          self.kinect_dot_pattern)
 
-            # save depth for each camera
-            for cam_id in range(len(self.cameras_batch)):
-                cv2.imwrite(f'outdir/{setting_name}/perfect_depth/{i:04d}_{cam_id}.png', depth_gt[cam_id] * 255)
-                # cv2.imwrite(f'outdir/{setting_name}/noised_depth/{i:04d}_{cam_id}.png', noisy_depth[cam_id] * 255)
-                # cv2.imwrite(f'outdir/{setting_name}/processed_depth_{i}_{cam_id}.png', depth[cam_id] * 255)
-                
+            for flag in augment_list:
 
-                # io_object.save_pointcloud(pytorch3d.structures.Pointclouds(points=torch.tensor(projected_pcd_noised[cam_id].reshape(1, -1, 3))).to('cpu'), f'outdir/{setting_name}/point_cloud/{i}_{cam_id}.ply')
-                # io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}/point_cloud/{i:04d}_{cam_id}.ply')
+                append_str = '_aug' if flag else ''
+               
+                motion_data_i = {k: v[i][None] for k,v in self.motion_data.items() if k != 'motion_T'}
+
+                output = self(**motion_data_i, augment_pose_flag=flag)
+                vertices = output.vertices.detach().cpu().numpy().squeeze()
+
+                depth_gt, depth, noisy_depth, projected_pcd_noised = mesh2pcd(vertices, 
+                                                                            self.model.faces, 
+                                                                            self.camera_config_dict, 
+                                                                            self.cameras_batch, 
+                                                                            self.kinect_dot_pattern)
+
+                # save depth for each camera
+                for cam_id in range(len(self.cameras_batch)):
+                    cv2.imwrite(f'{outdir}/{setting_name}/perfect_depth/{i:04d}_{cam_id}{append_str}.png', depth_gt[cam_id] * 255)
+                    # cv2.imwrite(f'outdir/{setting_name}/noised_depth/{i:04d}_{cam_id}{append_str}.png', noisy_depth[cam_id] * 255)
+                    # cv2.imwrite(f'outdir/{setting_name}/processed_depth_{i}_{cam_id}{append_str}.png', depth[cam_id] * 255)
+                    
+
+                    # io_object.save_pointcloud(pytorch3d.structures.Pointclouds(points=torch.tensor(projected_pcd_noised[cam_id].reshape(1, -1, 3))).to('cpu'), f'outdir/{setting_name}/point_cloud/{i}_{cam_id}.ply')
+                    # io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}/point_cloud/{i:04d}_{cam_id}.ply')
 
 
-            # import ipdb; ipdb.set_trace()
-            if i % 10 == 0:
-                # try changing camera pose along the way 
-                self.update_camera(self.camera_config1)
+                # import ipdb; ipdb.set_trace()
+                # if i % 10 == 0:
+                    # try changing camera pose along the way 
+                    # self.update_camera(self.camera_config1)
 
-            trimesh.Trimesh(vertices[i], self.model.faces).export(f'outdir/body_meshes/{i}.obj')
+                trimesh.Trimesh(vertices, self.model.faces).export(f'outdir/body_meshes/{i}.obj')
+                import ipdb; ipdb.set_trace()
         
  
     def load_cameras(self, camera_config_filepath):
