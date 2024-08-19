@@ -205,8 +205,7 @@ class SMPL(smplx.SMPL):
         if betas.shape[0] != batch_size:
             num_repeats = int(batch_size / betas.shape[0])
             betas = betas.expand(num_repeats, -1)
-
-
+ 
         v_template_cano = self.v_template
 
         # no workaround of lbs function as we also need minimal body

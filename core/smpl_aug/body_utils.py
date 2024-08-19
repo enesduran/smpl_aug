@@ -16,11 +16,6 @@ SMPL_JOINT_MIRROR_DICT_WO_ROOT = SMPL_JOINT_MIRROR_DICT.copy()
 SMPL_JOINT_MIRROR_DICT_WO_ROOT.pop(0)
 SMPL_JOINT_MIRROR_DICT_WO_ROOT = {k-1: v-1 for k, v in SMPL_JOINT_MIRROR_DICT_WO_ROOT.items()}
 
-
-# R = torch.tensor([[0.2262956,  0.1830079, -0.9567123],
-#             [-0.9567123,  0.2262956, -0.1830079],
-#             [0.1830079,  0.9567123,  0.2262956 ]])
-
 R = torch.tensor([1, -1, -1, -1, 1, 1, -1, 1, 1]).view(3, 3).float()
 
 def flip_pose(pose: Optional[Tensor], 
