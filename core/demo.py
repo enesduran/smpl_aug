@@ -13,7 +13,7 @@ def demo():
             continue
         else:
             outdir = os.path.join("outdir", "/".join(motion_path.strip('.npz').split('/')[1:]))
-            wrapper_obj.augment_loop(outdir=outdir)
+            wrapper_obj.augment_loop(outdir=outdir, augment_pose_flag=True, render_flag=args.render_flag)
 
 
 if __name__ == '__main__':
@@ -38,6 +38,7 @@ if __name__ == '__main__':
                         help='Compute the contour of the face')
 
     args = parser.parse_args()
+    args.render_flag = True
 
     wrapper_obj = SMPL_WRAPPER(args.model_folder,
                                args.body_model_type,
@@ -46,7 +47,8 @@ if __name__ == '__main__':
                                camera_config=args.camera_config,
                                use_face_contour=args.use_face_contour, 
                                clothing_option=args.clothing_option,
-                               use_layer=args.use_layer_instance) 
+                               use_layer=args.use_layer_instance, 
+                               render_flag=args.render_flag) 
     demo()
 
     

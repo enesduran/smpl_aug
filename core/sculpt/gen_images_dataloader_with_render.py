@@ -79,6 +79,8 @@ class SCULPT(object):
         UV_geo = x_geo.to(torch.float32)
 
         disp_img_geo = (UV_geo * 0.5 + 0.5) * 2 * 0.071 - 0.071
+
+        # this layer throws warning, could not fix it unless changing the network file due to usage of persistence class. 
         vert_disps = self.G_geometry.displacement_Layer(disp_img_geo)
 
         logger.info(f'Time taken for creating {sample_size} garments: {(time.time()-time_start_creation):.2f} seconds')

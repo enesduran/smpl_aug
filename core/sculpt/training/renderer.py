@@ -359,6 +359,6 @@ class displacement_Layer(nn.Module):
 
     def forward(self, disp_map):
         # added align_corners=False
-        torch_displacements = F.grid_sample(disp_map, self.x_y.repeat(disp_map.shape[0], 1, 1, 1), mode='bilinear', align_corners=False)
+        torch_displacements = F.grid_sample(disp_map, self.x_y.repeat(disp_map.shape[0], 1, 1, 1), mode='bilinear')
         
         return torch_displacements.squeeze(2).permute(0,2,1)
