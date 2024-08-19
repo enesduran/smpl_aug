@@ -31,6 +31,7 @@ class SMPL_WRAPPER(nn.Module):
                  clothing_option,
                  gender='neutral',
                  num_betas=10,
+                 render_flag=False,
                  camera_config="",
                  use_face_contour=False,
                  use_layer=False):
@@ -38,6 +39,7 @@ class SMPL_WRAPPER(nn.Module):
         super(SMPL_WRAPPER, self).__init__()
 
         self.use_layer = use_layer  
+        self.render_flag = render_flag
         self.body_model_type = body_model_type
 
         if use_layer:
@@ -53,14 +55,22 @@ class SMPL_WRAPPER(nn.Module):
                             use_pca=False,
                             clothing_option=clothing_option)
 
+        if render_flag:
+            self.camera_config = camera_config
+            self.camera_config1 = 'camera_configs/kinect_batch_update.json'
+            self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
-        self.camera_config = camera_config
-        self.camera_config1 = 'camera_configs/kinect_batch_update.json'
-        self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+            # reading the image directly in gray with 0 as input 
+            self.kinect_dot_pattern = cv2.imread("core/simkinect/data/sample_pattern.png", cv2.IMREAD_GRAYSCALE)
+            self.camera_config_dict = json.load(open(self.camera_config, 'r'))
 
-        # reading the image directly in gray with 0 as input 
-        self.kinect_dot_pattern = cv2.imread("core/simkinect/data/sample_pattern.png", cv2.IMREAD_GRAYSCALE)
-        self.camera_config_dict = json.load(open(self.camera_config, 'r'))
+            for cam_id in range(len(self.camera_config_dict["cameras"])):
+                self.camera_config_dict["cameras"][cam_id]["cam_T"] = \
+                        torch.tensor(self.camera_config_dict["cameras"][cam_id]["cam_T"])
+                self.camera_config_dict["cameras"][cam_id]["cam_R"] = \
+                        torch.tensor(self.camera_config_dict["cameras"][cam_id]["cam_R"])
+            
+            self.load_cameras()
 
 
     def forward(self, betas, expression, global_orient, transl, reye_pose, leye_pose, 
@@ -128,8 +138,11 @@ class SMPL_WRAPPER(nn.Module):
         cloth_types[:, 3] = 1
         kwargs_dict = {'cloth_types': cloth_types}
 
-        transl = jaw_pose = reye_pose = leye_pose = jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
+        jaw_pose = reye_pose = leye_pose = jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
         right_hand_pose = left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
+        
+        # transl = torch.tensor(motion_dict["trans"], dtype=torch.float32)[:motion_T]
+        transl = torch.zeros((motion_T, 3), dtype=torch.float32)
         
         if self.body_model_type == 'smpl':
             body_pose = torch.tensor(motion_dict["poses"][:, 3:72], dtype=torch.float32)[:motion_T]
@@ -159,7 +172,7 @@ class SMPL_WRAPPER(nn.Module):
         self.motion_data =  {'betas':betas, 
                             'expression':expression, 
                             'global_orient':global_orient, 
-                            'transl':transl, 
+                            'transl':transl,  
                             'reye_pose':reye_pose, 
                             'leye_pose':leye_pose,
                             'jaw_pose':jaw_pose, 
@@ -170,22 +183,23 @@ class SMPL_WRAPPER(nn.Module):
                             **kwargs_dict}
         
 
-    def augment_loop(self, outdir, augment_pose_flag=False):
+    def augment_loop(self, outdir, augment_pose_flag=False, render_flag=False):
 
-        setting_name = self.camera_config_dict['setting_name']
- 
+
         # load cameras from camera config file
-        self.load_cameras(self.camera_config)
         augment_list = [False] if augment_pose_flag else [False, True]
 
         io_object = IO()
          
         # create output directories
-        os.makedirs(f'{outdir}/body_meshes', exist_ok=True)
-        os.makedirs(f'{outdir}/{setting_name}', exist_ok=True)
-        os.makedirs(f'{outdir}/{setting_name}/perfect_depth', exist_ok=True)
-        os.makedirs(f'{outdir}/{setting_name}/noised_depth', exist_ok=True)
-        os.makedirs(f'{outdir}/{setting_name}/point_cloud', exist_ok=True)
+        if render_flag or self.render_flag:
+            setting_name = self.camera_config_dict['setting_name']
+            os.makedirs(f'{outdir}/{setting_name}', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/point_cloud', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/body_meshes', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/perfect_depth', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/noised_depth', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/processed_depth', exist_ok=True)
 
 
         for i in tqdm(range(self.motion_data['motion_T'])):
@@ -199,73 +213,79 @@ class SMPL_WRAPPER(nn.Module):
                 output = self(**motion_data_i, augment_pose_flag=flag)
                 vertices = output.vertices.detach().cpu().numpy().squeeze()
 
-                depth_gt, depth, noisy_depth, projected_pcd_noised = mesh2pcd(vertices, 
-                                                                            self.model.faces, 
-                                                                            self.camera_config_dict, 
-                                                                            self.cameras_batch, 
-                                                                            self.kinect_dot_pattern)
+                if render_flag or self.render_flag:
 
-                # save depth for each camera
-                for cam_id in range(len(self.cameras_batch)):
-                    cv2.imwrite(f'{outdir}/{setting_name}/perfect_depth/{i:04d}_{cam_id}{append_str}.png', depth_gt[cam_id] * 255)
-                    # cv2.imwrite(f'outdir/{setting_name}/noised_depth/{i:04d}_{cam_id}{append_str}.png', noisy_depth[cam_id] * 255)
-                    # cv2.imwrite(f'outdir/{setting_name}/processed_depth_{i}_{cam_id}{append_str}.png', depth[cam_id] * 255)
-                    
+                    _, depth_gt, depth, noisy_depth, projected_pcd_noised = mesh2pcd(vertices, 
+                                                                                    self.model.faces, 
+                                                                                    self.camera_config_dict, 
+                                                                                    self.cameras_batch, 
+                                                                                    self.kinect_dot_pattern, 
+                                                                                    single_pc_flag=True)
 
-                    # io_object.save_pointcloud(pytorch3d.structures.Pointclouds(points=torch.tensor(projected_pcd_noised[cam_id].reshape(1, -1, 3))).to('cpu'), f'outdir/{setting_name}/point_cloud/{i}_{cam_id}.ply')
-                    # io_object.save_pointcloud(projected_pcd_noised[cam_id], f'outdir/{setting_name}/point_cloud/{i:04d}_{cam_id}.ply')
+                    # save depth for each camera
+                    for cam_id in range(len(self.cameras_batch)):
 
+                        cv2.imwrite(f'{outdir}/{setting_name}/perfect_depth/{i:04d}_{cam_id}{append_str}.png', depth_gt[cam_id] * 255)
+                        cv2.imwrite(f'{outdir}/{setting_name}/noised_depth/{i:04d}_{cam_id}{append_str}.png', noisy_depth[cam_id] * 255)
+                        cv2.imwrite(f'{outdir}/{setting_name}/processed_depth/{i:04d}_{cam_id}{append_str}.png', depth[cam_id] * 255)
+                
+                        # update camera extrinsics between each frame
+                        self.camera_config_dict["cameras"][cam_id]["cam_T"] += motion_data_i["transl"][0]
+                
+                    # io_object.save_pointcloud(pytorch3d.structures.Pointclouds(points=torch.tensor(projected_pcd_noised[cam_id].reshape(1, -1, 3))).to('cpu'), f'{outdir}/{setting_name}/point_cloud/{i:04d}_{cam_id}.ply')
+                    io_object.save_pointcloud(projected_pcd_noised, f'{outdir}/{setting_name}/point_cloud/{i:04d}{append_str}.ply')
 
-                # import ipdb; ipdb.set_trace()
-                # if i % 10 == 0:
-                    # try changing camera pose along the way 
-                    # self.update_camera(self.camera_config1)
-
-                trimesh.Trimesh(vertices, self.model.faces).export(f'outdir/body_meshes/{i}.obj')
-                import ipdb; ipdb.set_trace()
+                trimesh.Trimesh(vertices, self.model.faces).export(f'{outdir}/{setting_name}/body_meshes/{i:04d}{append_str}.obj')
+                pytorch3d.io.save_obj(f=f'{outdir}/{setting_name}/body_meshes/{i:04d}{append_str}.obj', 
+                            verts=torch.tensor(vertices), faces=torch.tensor(self.model.faces.astype(np.int32)))
+            
+            # update camera extrinsics between each frame
+            self.update_camera_extrinsics()
         
  
-    def load_cameras(self, camera_config_filepath):
-        with open(camera_config_filepath, 'r') as f:
-            camera_config_dict = json.load(f)
-
-        camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T': _cam_['cam_T']} for _cam_ in camera_config_dict["cameras"]}
+    def load_cameras(self):
+    
+        camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T':_cam_['cam_T']} 
+                           for _cam_ in self.camera_config_dict["cameras"]}
         num_cameras = len(camera_ext_dict)
 
-        cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()])
-        cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()])
-        image_size = (camera_config_dict['height'], camera_config_dict['width'])
-        fx, fy = camera_config_dict['focal_length_x'], camera_config_dict['focal_length_y']
+        cam_batch_R = torch.vstack([elem['R'] for elem in camera_ext_dict.values()]).reshape(-1, 3, 3)
+        cam_batch_T = torch.vstack([elem['T'] for elem in camera_ext_dict.values()])
+        image_size = (self.camera_config_dict['height'], self.camera_config_dict['width'])
+        fx, fy = self.camera_config_dict['focal_length_x'], self.camera_config_dict['focal_length_y']
 
         focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2)
         image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2)
 
-        self.cameras_batch = PerspectiveCameras(focal_length=focal_length, device=self.device, R=cam_batch_R, T=cam_batch_T, image_size=image_size_mult)
+        # principal_point
+        if "cx" in self.camera_config_dict and "cy" in self.camera_config_dict:
+            cx, cy = self.camera_config_dict['cx'], self.camera_config_dict['cy']
+        else:
+            cx, cy = image_size[1]//2, image_size[0]//2
+
+        principal_point = torch.tensor([cx, cy]*num_cameras).reshape(-1, 2)
+    
+        self.cameras_batch = PerspectiveCameras(focal_length=focal_length,
+                                                principal_point=principal_point,
+                                                device=self.device,
+                                                R=cam_batch_R, 
+                                                T=cam_batch_T, 
+                                                image_size=image_size_mult, 
+                                                in_ndc=False)
  
 
-    def update_camera(self, camera_config_filepath):
+    def update_camera_extrinsics(self):
         
         # make sure load_cameras is called before this function
         assert hasattr(self, 'cameras_batch'), 'Please load the cameras first using load_cameras function'
 
+        camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T':_cam_['cam_T']} 
+                           for _cam_ in self.camera_config_dict["cameras"]}
 
-        with open(camera_config_filepath, 'r') as f:
-            camera_config_dict = json.load(f)
-
-        camera_ext_dict = {_cam_['camera_id']: {'R': _cam_['cam_R'], 'T': _cam_['cam_T']} for _cam_ in camera_config_dict["cameras"]}
-        num_cameras = len(camera_ext_dict)
-
-        cam_batch_R = torch.tensor([elem['R'] for elem in camera_ext_dict.values()]).to(self.device)
-        cam_batch_T = torch.tensor([elem['T'] for elem in camera_ext_dict.values()]).to(self.device)
-        image_size = (camera_config_dict['height'], camera_config_dict['width'])
-        fx, fy = camera_config_dict['focal_length_x'], camera_config_dict['focal_length_y']
-
-        focal_length = torch.tensor([fx, fy]*num_cameras).reshape(-1, 2).to(self.device)
-        image_size_mult = torch.tensor([image_size]*num_cameras).reshape(-1, 2).to(self.device)
-     
-        # tested. works fine
+        
+        cam_batch_R = torch.vstack([elem['R'] for elem in camera_ext_dict.values()]).reshape(-1, 3, 3)
+        cam_batch_T = torch.vstack([elem['T'] for elem in camera_ext_dict.values()])
+        
         logger.info('Updating camera parameters')
-        self.cameras_batch.R = cam_batch_R
-        self.cameras_batch.T = cam_batch_T
-        self.cameras_batch.focal_length = focal_length
-        self.cameras_batch.image_size = image_size_mult
+        self.cameras_batch.R = cam_batch_R.to(self.device)
+        self.cameras_batch.T = cam_batch_T.to(self.device)
