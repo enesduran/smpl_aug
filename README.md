@@ -1,12 +1,14 @@
 # SMPL AUGMENTATION LIBRARY 
 
-We provide a framework for depth rendering and data augmentation of SMPL body model. We aim to show the effectiveness of our framework in some plausible use cases:
+We provide a framework for batch depth rendering and data augmentation of SMPL body model. We aim to show the effectiveness of our framework in some plausible use cases:
 
     1) Data augmentation tool for multiview noisy depth images
     2) Simulation accompanying kinect camera noise for a given RGB video 
 
 
 Huge shoutout to [SMPLX](https://github.com/vchoutas/smplx), [SCULPT](https://github.com/soubhiksanyal/SCULPT_release), [SimKinect](https://github.com/ankurhanda/simkinect) implementations. 
+
+Contributors: ...
 
 ### Creating Environment 
 
@@ -69,12 +71,9 @@ The outputs will be saved under `outdir/`
 
 TODO (with importance order)
 
-1) Further purge the SCULPT and SimKInect codebase.
-2) Debug batch depth noising 
-3) Batch point cloud extraction 
-4) Recovered point cloud rotation 
-5) Formulating tasks to be used in tandem with this framework 
-    Providing 3D scene or already rendered depth image of the scene as an optional argument 
-
-6) Write the report 
-7) Presentation 
+- [ ] Train 3D-Coded with augmentation and vanilla 
+- [ ]  Contemplate about possible use cases (no empirical demonstration): 
+        a) Providing 3D scene or already rendered depth image of the scene as an optional argument render object and humans on top of it. 
+        b) Given a dataset of human motion and RGB images, simulate Kinect depth and point cloud.  
+- [ ]  Write the report 
+- [ ]  Presentation 
