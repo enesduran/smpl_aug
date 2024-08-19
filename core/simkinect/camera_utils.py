@@ -1,8 +1,5 @@
-import numpy as np 
 import cv2 
-
-from scipy.interpolate import griddata
-from scipy import ndimage
+import numpy as np 
 
 def vertex_from_depth(depth,
                       fl,

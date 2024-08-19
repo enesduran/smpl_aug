@@ -34,8 +34,7 @@ class SCULPT(object):
 
         # 'blazerlong' is skipped      
         self.clothing_names = {0: 'longlong', 1: 'shirtlong', 2: 'shortshort_poloshort', 3: 'longshort_jerseyshort', 4: 'shirtshort', 5: 'shortlong'}
-
-        # num_samples = 50
+ 
         os.makedirs(outdir, exist_ok=True)
         logger.info(f'Time taken for loading SCULPT model: {(time.time()-time_start):.2f} seconds')
 

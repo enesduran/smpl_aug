@@ -1,23 +1,17 @@
 # adapted from https://github.com/ankurhanda/simkinect
-import os 
-import cv2 
 import torch
 import numpy as np 
 import open3d as o3d
-from simkinect.camera_utils import filterDisp, filterDisp_batch, add_gaussian_shifts
-
 from pytorch3d.structures import Meshes
 from pytorch3d.implicitron.tools import point_cloud_utils
 from pytorch3d.renderer import RasterizationSettings, MeshRasterizer 
 
+from simkinect.camera_utils import filterDisp, filterDisp_batch, add_gaussian_shifts
+
  
-
-
-
 def capture_mesh_depth(meshes, camera, image_size):
 
     raster_settings = RasterizationSettings(image_size=image_size)
-                                            # , faces_per_pixel=1)
 
     rasterizer = MeshRasterizer(
         cameras=camera, 
