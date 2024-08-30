@@ -136,8 +136,13 @@ class SMPL_WRAPPER(nn.Module):
         cloth_types[:, 3] = 1
         kwargs_dict = {'cloth_types': cloth_types}
 
-        jaw_pose = reye_pose = leye_pose = jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
-        right_hand_pose = left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
+        jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
+        reye_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
+        leye_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
+        jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
+
+        right_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32) 
+        left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
         
         transl = torch.tensor(motion_dict["trans"], dtype=torch.float32)[:motion_T]
         
@@ -186,7 +191,7 @@ class SMPL_WRAPPER(nn.Module):
 
 
         # load cameras from camera config file
-        augment_list = [False] if augment_pose_flag else [False, True]
+        augment_list = [False, True] if augment_pose_flag else [False]
 
         io_object = IO()
         print(outdir)
@@ -195,11 +200,11 @@ class SMPL_WRAPPER(nn.Module):
         if render_flag or self.render_flag:
             setting_name = self.camera_config_dict['setting_name']
             os.makedirs(f'{outdir}/{setting_name}', exist_ok=True)
-            os.makedirs(f'{outdir}/{setting_name}/point_cloud', exist_ok=True)
             os.makedirs(f'{outdir}/{setting_name}/body_meshes', exist_ok=True)
             os.makedirs(f'{outdir}/{setting_name}/perfect_depth', exist_ok=True)
             os.makedirs(f'{outdir}/{setting_name}/noised_depth', exist_ok=True)
-            os.makedirs(f'{outdir}/{setting_name}/processed_depth', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/point_cloud_gt', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/point_cloud_noised', exist_ok=True)
 
 
         for i in tqdm(range(self.motion_data['motion_T'])):
@@ -223,8 +228,9 @@ class SMPL_WRAPPER(nn.Module):
                 vertices = output.vertices.detach().cpu().numpy().squeeze()
 
                 if render_flag or self.render_flag:
-
-                    _, depth_gt, depth, noisy_depth, projected_pcd_noised = mesh2pcd(vertices, 
+ 
+                    depth_gt_unscaled, depth_gt_scaled, noisy_depth, projected_pcd_gt, projected_pcd_noised = \
+                                                                                    mesh2pcd(vertices, 
                                                                                     self.model.faces, 
                                                                                     self.camera_config_dict, 
                                                                                     self.cameras_batch, 
@@ -233,14 +239,16 @@ class SMPL_WRAPPER(nn.Module):
 
                     # save depth for each camera
                     for cam_id in range(len(self.cameras_batch)):
-                        cv2.imwrite(f'{outdir}/{setting_name}/perfect_depth/{i:04d}_{cam_id}{append_str}.png', depth_gt[cam_id] * 255)
-                        cv2.imwrite(f'{outdir}/{setting_name}/noised_depth/{i:04d}_{cam_id}{append_str}.png', noisy_depth[cam_id] * 255)
-                        cv2.imwrite(f'{outdir}/{setting_name}/processed_depth/{i:04d}_{cam_id}{append_str}.png', depth[cam_id] * 255)
+                        cv2.imwrite(f'{outdir}/{setting_name}/perfect_depth/{i:04d}_{cam_id}{append_str}.jpg', depth_gt_scaled[cam_id] * 255)
+                        cv2.imwrite(f'{outdir}/{setting_name}/noised_depth/{i:04d}_{cam_id}{append_str}.jpg', noisy_depth[cam_id] * 255)
+                      
                 
-                    io_object.save_pointcloud(projected_pcd_noised, f'{outdir}/{setting_name}/point_cloud/{i:04d}{append_str}.ply')
+                    io_object.save_pointcloud(projected_pcd_noised, f'{outdir}/{setting_name}/point_cloud_noised/{i:04d}{append_str}.ply')
+                    io_object.save_pointcloud(projected_pcd_gt, f'{outdir}/{setting_name}/point_cloud_gt/{i:04d}{append_str}.ply')
 
  
-                verts = torch.tensor(vertices) @ self.vertex2pcd_rot
+                # verts = torch.tensor(vertices) @ self.vertex2pcd_rot
+                verts = vertices
 
                 # save point cloud
                 pytorch3d.io.save_obj(f'{outdir}/{setting_name}/body_meshes/{i:04d}{append_str}.obj', 
@@ -256,8 +264,7 @@ class SMPL_WRAPPER(nn.Module):
                 
             # update camera extrinsics between each frame
             self.update_camera_extrinsics()
-    
-        
+  
  
     def load_cameras(self):
     

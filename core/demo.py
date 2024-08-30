@@ -6,14 +6,14 @@ from smpl_wrapper import SMPL_WRAPPER
  
 def demo():
  
-    for motion_path in reversed(glob.glob('motion_data/DFaust/DFaust_67/*/*.npz')):
+    for motion_path in sorted(glob.glob('motion_data/DFaust/DFaust_67/*/*.npz')):
 
         if 'shape.npz' in motion_path:
             continue
         else:
             wrapper_obj.load_data(motion_path)
             outdir = os.path.join("outdir", "/".join(motion_path.strip('.npz').split('/')[1:]))
-            wrapper_obj.augment_loop(outdir=outdir, augment_pose_flag=True, render_flag=args.render_flag)
+            wrapper_obj.augment_loop(outdir=outdir, augment_pose_flag=args.augment_pose_flag, render_flag=args.render_flag)
 
 
 if __name__ == '__main__':
@@ -27,6 +27,8 @@ if __name__ == '__main__':
                         help='The path to the model folder')
     parser.add_argument('--motion-path', required=True, type=str,
                         help='The path to motion data')
+    parser.add_argument('--augment-pose-flag', default=True, type=bool,
+                        help='Augment the pose through reflection')
     parser.add_argument('--camera-config', default='', type=str,
                         help='The path to the camera configuration')
     parser.add_argument('--gender', type=str, default='neutral',
