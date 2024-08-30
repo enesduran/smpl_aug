@@ -101,7 +101,8 @@ def mesh2pcd(vertices,
 
     # import ipdb; ipdb.set_trace()
 
-    depth_interp = add_gaussian_shifts(depth_gt) 
+    # depth_interp = add_gaussian_shifts(depth_gt) 
+    depth_interp = add_gaussian_shifts(depth_gt_unscaled) 
     depth_f = fx * baseline_m / (depth_interp + 1e-10)
     out_disp = np.array([filterDisp(depth_f[i], kinect_dot_pattern, INVALID_DISP_THRESHOLD, filter_size_window) for i in range(num_cameras)])
     depth = fx * baseline_m / out_disp
@@ -116,7 +117,8 @@ def mesh2pcd(vertices,
     noisy_depth /= scale_factor
 
     depth[out_disp == INVALID_DISP_THRESHOLD] = 0     
-    projected_pcd_noised = recover_pcd_from_depth(torch.from_numpy(depth_gt_unscaled).to(device), cameras_batch, single_pc_flag=single_pc_flag)
+    # projected_pcd_noised = recover_pcd_from_depth(torch.from_numpy(depth_gt_unscaled).to(device), cameras_batch, single_pc_flag=single_pc_flag)
+    projected_pcd_noised = recover_pcd_from_depth(torch.from_numpy(noisy_depth).to(device), cameras_batch, single_pc_flag=single_pc_flag)
  
     return depth_gt_unscaled, depth_gt, depth, noisy_depth, projected_pcd_noised
     

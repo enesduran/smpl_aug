@@ -6,12 +6,12 @@ from smpl_wrapper import SMPL_WRAPPER
  
 def demo():
  
-    for motion_path in glob.glob('motion_data/DFaust/DFaust_67/*/*.npz'):
-        wrapper_obj.load_data(motion_path)
+    for motion_path in reversed(glob.glob('motion_data/DFaust/DFaust_67/*/*.npz')):
 
         if 'shape.npz' in motion_path:
             continue
         else:
+            wrapper_obj.load_data(motion_path)
             outdir = os.path.join("outdir", "/".join(motion_path.strip('.npz').split('/')[1:]))
             wrapper_obj.augment_loop(outdir=outdir, augment_pose_flag=True, render_flag=args.render_flag)
 

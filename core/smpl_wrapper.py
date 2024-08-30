@@ -130,11 +130,8 @@ class SMPL_WRAPPER(nn.Module):
     def load_data(self, motion_path):
         motion_dict = np.load(motion_path)
 
-        try: 
-            motion_T = motion_dict["poses"].shape[0]
-        except:
-            import ipdb; ipdb.set_trace()
-
+        motion_T = motion_dict["poses"].shape[0]
+       
         cloth_types = np.ones((motion_T, 6), dtype=np.int64) * 3
         cloth_types[:, 3] = 1
         kwargs_dict = {'cloth_types': cloth_types}
