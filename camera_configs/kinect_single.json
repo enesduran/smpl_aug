@@ -4,7 +4,6 @@
     "width": 640,
     "height": 480,
     "depth_scale": 100,
-    "depth_min": 0.5,
     "depth_max": 10.0,
     "sample_freq": 20,
     "conv_filter_size_window": 7,
