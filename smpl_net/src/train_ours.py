@@ -10,7 +10,6 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch_scatter import scatter_mean
 
-from amass_ptc_loader import AMASSDataset
 from data import DFaustDataset
 from backbones import get_part_seg_loss
 from geometry import (
@@ -193,7 +192,6 @@ def train(args, model, body_model, optimizer, train_loader):
         B, _ = motion_trans.size()
  
         if args.aug_type == "so3":
-
             global_root = batch_data["global_orient"].to(args.device)
             global_root_aug = aug_so3_ptc(global_root)
 
@@ -206,12 +204,11 @@ def train(args, model, body_model, optimizer, train_loader):
         gt_joints_pos, gt_vertices = SMPLX_layer(body_model, betas, motion_trans, motion_pose_rotmat, rep="rotmat")
 
         pcl_data = get_pointcloud(pc_data_list)
-
-
+ 
         losses = {}
   
-        pred_joint, pred_pose, pred_shape, trans_feat = model(
-            pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
+        pred_joint, pred_pose, pred_shape, trans_feat = \
+            model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
 
 
         gt_joints_set = [10, 11]
@@ -223,12 +220,6 @@ def train(args, model, body_model, optimizer, train_loader):
         angle_loss = norm_loss(pred_pose[0, :22], motion_pose_rotmat_global[0, :22], loss_type="l2")
  
         pred_joints_pos, pred_vertices = SMPLX_layer(body_model, pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
-
-        # pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
-        # gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
-        # losses["seg_loss"] = (point_cls_loss(pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
-        #                                     label_data.reshape(-1, ), trans_feat,)  * args.part_w)
-        # losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
 
         losses["angle_recon"] = angle_loss * args.angle_w
         losses["beta"] = F.mse_loss(pred_shape, betas.reshape(B, -1)[:, :10])
@@ -323,9 +314,7 @@ if __name__ == "__main__":
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    # dataset = AMASSDataset()
     train_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=True, gt_flag=args.gt_flag, aug_flag=args.aug_flag)
-    test_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=False, gt_flag=args.gt_flag, aug_flag=False)
 
     body_model = get_body_model(model_type="smpl", gender="neutral", batch_size=args.batch_size, device="cuda")
 

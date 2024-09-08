@@ -3,10 +3,13 @@ import os
 from pathlib import Path
 
 import numpy as np
+import trimesh 
 import smplx
 import torch
 import tqdm.auto as tqdm
 import webdataset as wds
+from data import DFaustDataset
+from torch.utils.data import DataLoader
 
 from geometry import get_body_model
 from models_pointcloud import PointCloud_network_equiv
@@ -46,12 +49,7 @@ if __name__ == "__main__":
                                                                 args.aug_flag,
                                                                 args.num_point)
 
-    
-    if args.num_point != 5000:
-        exps_folder = exps_folder + f"_num_point_{args.num_point}"
-    if args.i is not None:
-        exps_folder = exps_folder + f"_{args.i}"
-
+     
     output_folder = os.path.sep.join(["./experiments", exps_folder])
 
     if args.paper_model:
@@ -66,76 +64,80 @@ if __name__ == "__main__":
 
     torch.backends.cudnn.benchmark = True
 
-    body_model = get_body_model(model_type="smpl", gender="male", batch_size=1, device="cuda")
+    body_model = get_body_model(model_type="smpl", gender="neutral", batch_size=1, device="cuda")
     parents = body_model.parents[:22]
-    body_model_gt = smplx.SMPL("./data/smpl_model/SMPL_MALE.pkl", batch_size=1, num_betas=10)
+
+    body_model_gt = smplx.SMPL("../body_models/smpl/SMPL_NEUTRAL.pkl", batch_size=1, num_betas=10)
 
     base_path = Path(output_folder)
     print(base_path)
     torch.manual_seed(1)
 
+    test_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=False, gt_flag=args.gt_flag, aug_flag=False)
+    test_loader = DataLoader(test_dataset, 
+                              batch_size=args.batch_size, 
+                              shuffle=True, 
+                              pin_memory=True, 
+                              drop_last=True)
+
+
     model_path = base_path / f"model_epochs_{args.epoch-1:08d}.pth"
+    os.makedirs(os.path.join(os.path.dirname(model_path), 'results'), exist_ok=True)
 
     model = PointCloud_network_equiv(option=args, z_dim=args.latent_num, nc=nc, part_num=args.part_num).to(args.device)
 
     model.load_state_dict(torch.load(model_path))
+       
+    v2v, joint_err = {}, {}
+    
 
-    for tar_folder in [Path("./data/DFaust_67_val/"), Path("./data/MPI_Limits/")]:
-        print(
-            f"{args.epoch=}, {args.aug_type=}, {args.kinematic_cond=} {tar_folder.name=} {args.EPN_layer_num=} {args.EPN_input_radius=}"
-        )
-        v2v = {}
-        joint_err = {}
-        acc = {}
+    with torch.inference_mode():
 
-        with torch.inference_mode():
-            for tar_path in tqdm.tqdm(sorted(tar_folder.glob("*.tar"), key=lambda x: x.stem)):
-                dataset = wds.WebDataset(str(tar_path)).decode().to_tuple("input.pth")
-                
-                for i, (batch,) in enumerate(dataset):
-                    pcl_data = batch["pcl_data"][: args.num_point][None].cuda()
-                    pred_joint, pred_pose, pred_shape, trans_feat = \
-                        model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
+        for i, batch_data in enumerate(tqdm.tqdm(test_loader)):
+ 
+            pcl_data = batch_data["point_cloud"][:].cuda().float()
+            pcl_data = pcl_data[pcl_data.sum(-1) != 0][None]
 
-                    pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
+            rand_idx = np.random.choice(pcl_data.shape[1], 80000, replace=False)
+            pcl_data = batch_data["point_cloud"][:, rand_idx].float().cuda()
 
-                    trans_feat = torch.zeros((1, 3)).cuda()
+            pred_joint, pred_pose, pred_shape, trans_feat = \
+                model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
 
-                    pred_joints_pos, pred_vertices = SMPLX_layer(body_model,
-                                                                pred_shape,
-                                                                trans_feat,
-                                                                pred_joint_pose,
-                                                                rep="rotmat")
+            pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
 
-                    pred_joints_pos = pred_joints_pos[0].cpu()
-                    pred_vertices = pred_vertices[0].cpu()
+            trans_feat = torch.zeros((1, 3)).cuda()
 
-                    betas = batch["betas"][:10][None]
-                    transl = torch.zeros_like(batch["trans"][None])
-                    body_pose = batch["poses"][1:24].flatten()[None]
-                    body_pose[:, -6:] = 0
-                    global_orient = batch["poses"][0][None]
+            pred_joints_pos, pred_vertices = SMPLX_layer(body_model,
+                                                        pred_shape,
+                                                        trans_feat,
+                                                        pred_joint_pose,
+                                                        rep="rotmat")
 
-                    smpl_output = body_model_gt(
-                        betas=betas, transl=transl, body_pose=body_pose, global_orient=global_orient
-                    )
-                    vertices_gt = smpl_output.vertices[0]
-                    joints_gt = smpl_output.joints[0]
+            pred_joints_pos = pred_joints_pos[0].cpu()
+            pred_vertices = pred_vertices[0].cpu()
 
-                    v2v[f"{tar_path.stem}_{i}"] = (
-                        100 * (vertices_gt - pred_vertices).square().sum(dim=-1).sqrt().mean().item()
-                    )
-                    joint_err[f"{tar_path.stem}_{i}"] = (
-                        100 * (joints_gt - pred_joints_pos).square().sum(dim=-1).sqrt().mean().item()
-                    )
-                    acc[f"{tar_path.stem}_{i}"] = (
-                        (pred_joint[0].argmax(dim=1).cpu() == batch["label_data"][: args.num_point])
-                        .mean(dtype=float)
-                        .item()
-                    )
+            betas = batch_data["betas"][:]
+            transl = torch.zeros_like(batch_data["trans"])
 
-                    import ipdb; ipdb.set_trace()
+            body_pose = batch_data["pose"]
+            body_pose[:, -6:] = 0
 
-        print(f"v2v={np.mean(list(v2v.values())):.3f} \
-              joint_err={np.mean(list(joint_err.values())):.3f} \
-              part_acc={100*np.mean(list(acc.values())):.3f}")
+            global_orient = batch_data["global_orient"] 
+
+
+            smpl_output = body_model_gt(betas=betas, transl=transl, body_pose=body_pose, global_orient=global_orient)
+
+            vertices_gt = smpl_output.vertices[0]
+            joints_gt = smpl_output.joints[0]
+
+            v2v[f"{i}"] = (100 * (vertices_gt - pred_vertices).square().sum(dim=-1).sqrt().mean().item())
+            
+            joint_err[f"{i}"] = (100 * (joints_gt - pred_joints_pos).square().sum(dim=-1).sqrt().mean().item())
+
+            trimesh.Trimesh(vertices=pred_vertices, faces=body_model.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_pred_{i:04d}.obj'))
+            trimesh.PointCloud(pcl_data[0].cpu().numpy()).export(os.path.join(os.path.dirname(model_path), 'results', f'pc_{i:04d}.ply'))
+
+    print(f"v2v={np.mean(list(v2v.values())):.3f} \
+            joint_err={np.mean(list(joint_err.values())):.3f} \
+            part_acc={100*np.mean(list(acc.values())):.3f}")
