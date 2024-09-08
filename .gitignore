@@ -1,5 +1,6 @@
+smpl_net/data
+smpl_net/experiments
 core/sculpt/data
-3D-CODED
 
 *.obj
 *.pkl

@@ -1,0 +1,7 @@
+# ninja log v5
+1	40549	1725712586000000000	/lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/zpconv_cuda.o	c2905250543870b6
+1	80437	1725712626000000000	/lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/zpconv_cuda_kernel.o	d21229c823e6565b
+2	40594	1725712667000000000	/lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/gathering_cuda.o	ca063caa242785cf
+2	79967	1725712707000000000	/lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/gathering_cuda_kernel.o	c700dbfecd23f75f
+2	40675	1725712748000000000	/lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/grouping_cuda.o	1f32981b3ba32326
+2	75485	1725712783000000000	/lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/grouping_cuda_kernel.o	2110953ab94e57f2
