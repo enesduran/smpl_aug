@@ -72,9 +72,9 @@ def mesh2pcd(vertices,
 
  
     # various variables to handle the noise modelling
-    scale_factor  = 100.0   # converting depth from m to cm 
     baseline_m    = 0.075   # baseline in m 0.075
     INVALID_DISP_THRESHOLD = 99999999.9
+    scale_factor  = camera_config_dict['depth_scale']
     filter_size_window = camera_config_dict['conv_filter_size_window']
     fx = camera_config_dict['focal_length_x']
 
@@ -97,6 +97,8 @@ def mesh2pcd(vertices,
  
     # minmax scaling 
     depth_gt_unscaled = capture_mesh_depth(meshes, cameras_batch, image_size=image_size)    
+    depth_gt_unscaled[depth_gt_unscaled>camera_config_dict["depth_max"]] = camera_config_dict["depth_max"]
+ 
     depth_gt_scaled = (depth_gt_unscaled - depth_gt_unscaled.min()) / (depth_gt_unscaled.max() - depth_gt_unscaled.min() + 1e-10)
  
     depth_f = fx * baseline_m / (add_gaussian_shifts(depth_gt_unscaled)  + 1e-10)

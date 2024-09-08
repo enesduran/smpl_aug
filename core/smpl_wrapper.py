@@ -33,13 +33,15 @@ class SMPL_WRAPPER(nn.Module):
                  render_flag=False,
                  camera_config="",
                  use_face_contour=False,
-                 use_layer=False):
+                 use_layer=False,
+                 verbose=False):
         
         super(SMPL_WRAPPER, self).__init__()
 
         self.use_layer = use_layer  
         self.render_flag = render_flag
         self.body_model_type = body_model_type
+        self.verbose = verbose
 
         if use_layer:
             self.model = smpl_aug.build_layer(model_path=model_folder,
@@ -52,7 +54,8 @@ class SMPL_WRAPPER(nn.Module):
                             use_face_contour=use_face_contour,
                             num_betas=num_betas,
                             use_pca=False,
-                            clothing_option=clothing_option)
+                            clothing_option=clothing_option, 
+                            verbose=verbose)
 
         if render_flag:
             self.camera_config = camera_config
@@ -62,6 +65,7 @@ class SMPL_WRAPPER(nn.Module):
             # reading the image directly in gray with 0 as input 
             self.kinect_dot_pattern = cv2.imread("core/simkinect/data/sample_pattern.png", cv2.IMREAD_GRAYSCALE)
             self.camera_config_dict = json.load(open(self.camera_config, 'r'))
+            self.sample_freq = self.camera_config_dict['sample_freq']
 
             self.vertex2pcd_rot = torch.tensor([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=torch.float32)
 
@@ -145,6 +149,7 @@ class SMPL_WRAPPER(nn.Module):
         left_hand_pose = torch.zeros((motion_T, 45), dtype=torch.float32)
         
         transl = torch.tensor(motion_dict["trans"], dtype=torch.float32)[:motion_T]
+        transl = torch.zeros_like(transl)
         
         
         if self.body_model_type == 'smpl':
@@ -184,6 +189,7 @@ class SMPL_WRAPPER(nn.Module):
                             'right_hand_pose':right_hand_pose, 
                             'body_pose':body_pose,
                             'motion_T':motion_T,
+                            'seq_name': motion_path, 
                             **kwargs_dict}
         
 
@@ -200,6 +206,7 @@ class SMPL_WRAPPER(nn.Module):
         if render_flag or self.render_flag:
             setting_name = self.camera_config_dict['setting_name']
             os.makedirs(f'{outdir}/{setting_name}', exist_ok=True)
+            os.makedirs(f'{outdir}/{setting_name}/body_data', exist_ok=True)
             os.makedirs(f'{outdir}/{setting_name}/body_meshes', exist_ok=True)
             os.makedirs(f'{outdir}/{setting_name}/perfect_depth', exist_ok=True)
             os.makedirs(f'{outdir}/{setting_name}/noised_depth', exist_ok=True)
@@ -209,7 +216,7 @@ class SMPL_WRAPPER(nn.Module):
 
         for i in tqdm(range(self.motion_data['motion_T'])):
 
-            motion_data_i = {k: v[i][None] for k,v in self.motion_data.items() if k != 'motion_T'}
+            motion_data_i = {k: v[i][None] if k not in ['motion_T', 'seq_name'] else v for k,v in self.motion_data.items() }
             
             if i == 0:
                 delta_cam_trans = torch.zeros_like(self.motion_data['transl'][0])   
@@ -221,39 +228,47 @@ class SMPL_WRAPPER(nn.Module):
             prev_transl = self.motion_data['transl'][0].clone()
             prev_rot = transforms.axis_angle_to_matrix(motion_data_i['global_orient'][0])
 
-            for flag in augment_list:
+            # render and save mesh at sample_freq
+            if i % self.sample_freq == 0:
 
-                append_str = '_aug' if flag else ''
-                output = self(**motion_data_i, augment_pose_flag=flag)
-                vertices = output.vertices.detach().cpu().numpy().squeeze()
+                for augment_pose_flag in augment_list:
 
-                if render_flag or self.render_flag:
- 
-                    depth_gt_unscaled, depth_gt_scaled, noisy_depth, projected_pcd_gt, projected_pcd_noised = \
-                                                                                    mesh2pcd(vertices, 
-                                                                                    self.model.faces, 
-                                                                                    self.camera_config_dict, 
-                                                                                    self.cameras_batch, 
-                                                                                    self.kinect_dot_pattern, 
-                                                                                    single_pc_flag=True)
+                    append_str = '_aug' if augment_pose_flag else ''
+                    output = self(**motion_data_i, augment_pose_flag=augment_pose_flag)
+                    vertices = output.vertices.detach().cpu().numpy().squeeze()
 
-                    # save depth for each camera
-                    for cam_id in range(len(self.cameras_batch)):
-                        cv2.imwrite(f'{outdir}/{setting_name}/perfect_depth/{i:04d}_{cam_id}{append_str}.jpg', depth_gt_scaled[cam_id] * 255)
-                        cv2.imwrite(f'{outdir}/{setting_name}/noised_depth/{i:04d}_{cam_id}{append_str}.jpg', noisy_depth[cam_id] * 255)
-                      
-                
-                    io_object.save_pointcloud(projected_pcd_noised, f'{outdir}/{setting_name}/point_cloud_noised/{i:04d}{append_str}.ply')
-                    io_object.save_pointcloud(projected_pcd_gt, f'{outdir}/{setting_name}/point_cloud_gt/{i:04d}{append_str}.ply')
+                    if render_flag or self.render_flag:
+    
+                        depth_gt_unscaled, depth_gt_scaled, noisy_depth, projected_pcd_gt, projected_pcd_noised = \
+                                                                                        mesh2pcd(vertices, 
+                                                                                        self.model.faces, 
+                                                                                        self.camera_config_dict, 
+                                                                                        self.cameras_batch, 
+                                                                                        self.kinect_dot_pattern, 
+                                                                                        single_pc_flag=True)
 
- 
-                # verts = torch.tensor(vertices) @ self.vertex2pcd_rot
-                verts = vertices
+                        # save depth for each camera
+                        for cam_id in range(len(self.cameras_batch)):
+                            cv2.imwrite(f'{outdir}/{setting_name}/perfect_depth/{i:04d}_{cam_id}{append_str}.jpg', depth_gt_scaled[cam_id] * 255)
+                            cv2.imwrite(f'{outdir}/{setting_name}/noised_depth/{i:04d}_{cam_id}{append_str}.jpg', noisy_depth[cam_id] * 255)
+                        
+                    
+                        io_object.save_pointcloud(projected_pcd_noised, f'{outdir}/{setting_name}/point_cloud_noised/{i:04d}{append_str}.ply')
+                        io_object.save_pointcloud(projected_pcd_gt, f'{outdir}/{setting_name}/point_cloud_gt/{i:04d}{append_str}.ply')
+    
+                    # verts = torch.tensor(vertices) @ self.vertex2pcd_rot
+                    verts = torch.tensor(vertices)
 
-                # save point cloud
-                pytorch3d.io.save_obj(f'{outdir}/{setting_name}/body_meshes/{i:04d}{append_str}.obj', 
+                    # save body mesh data
+                    motion_data_i['aug_flag'] = augment_pose_flag
+                    motion_data_i['timestep'] = i
+                    np.save(f'{outdir}/{setting_name}/body_data/{i:04d}{append_str}.npy', motion_data_i) 
+
+                    # save body mesh 
+                    pytorch3d.io.save_obj(f'{outdir}/{setting_name}/body_meshes/{i:04d}{append_str}.obj', 
                             verts=verts, faces=torch.tensor(self.model.faces.astype(np.int32)))
-             
+                             
+
             # update camera extrinsics between each frame
             for cam_id in range(len(self.cameras_batch)): 
              
@@ -261,7 +276,7 @@ class SMPL_WRAPPER(nn.Module):
                 
                 rotated_delta_cam_trans = self.camera_config_dict["cameras"][cam_id]["cam_R"] @ delta_cam_trans
                 # self.camera_config_dict["cameras"][cam_id]["cam_T"] += rotated_delta_cam_trans
-                
+         
             # update camera extrinsics between each frame
             self.update_camera_extrinsics()
   
@@ -309,6 +324,8 @@ class SMPL_WRAPPER(nn.Module):
         cam_batch_R = torch.vstack([elem['R'] for elem in camera_ext_dict.values()]).reshape(-1, 3, 3)
         cam_batch_T = torch.vstack([elem['T'] for elem in camera_ext_dict.values()])
         
-        logger.info('Updating camera parameters')
+        if self.verbose:
+            logger.info('Updating camera parameters')
+        
         self.cameras_batch.R = cam_batch_R.to(self.device)
         self.cameras_batch.T = cam_batch_T.to(self.device)

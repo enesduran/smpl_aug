@@ -128,7 +128,8 @@ class SMPL(smplx.SMPL):
             from sculpt.gen_images_dataloader_with_render import SCULPT
 
             self.sculpt_instance = SCULPT(geo_network_pkl_path='core/sculpt/data/network-snapshot-013440.pkl',
-                                          outdir = './outdir')           
+                                          outdir = './outdir',
+                                          verbose=kwargs.get("verbose"))           
 
     def forward(
         self,

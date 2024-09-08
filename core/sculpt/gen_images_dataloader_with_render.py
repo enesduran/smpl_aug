@@ -19,7 +19,8 @@ from pytorch3d.transforms import matrix_to_axis_angle
 class SCULPT(object):
     def __init__(self, 
                  geo_network_pkl_path: str,
-                 outdir: str) -> None:
+                 outdir: str,
+                 verbose: bool = False) -> None:
         
         time_start = time.time()
     
@@ -27,6 +28,7 @@ class SCULPT(object):
         super().__init__()
 
         self.outdir = outdir
+        self.verbose = verbose
         self.device = torch.device('cuda')
   
         with dnnlib.util.open_url(geo_network_pkl_path) as f:
@@ -82,7 +84,9 @@ class SCULPT(object):
         # this layer throws warning, could not fix it unless changing the network file due to usage of persistence class. 
         vert_disps = self.G_geometry.displacement_Layer(disp_img_geo)
 
-        logger.info(f'Time taken for creating {sample_size} garments: {(time.time()-time_start_creation):.2f} seconds')
+        if self.verbose:
+            logger.info(f'Time taken for creating {sample_size} garments: {(time.time()-time_start_creation):.2f} seconds')
+        
         return vert_disps
 
         
