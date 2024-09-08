@@ -10,7 +10,7 @@ import webdataset as wds
 
 from geometry import get_body_model
 from models_pointcloud import PointCloud_network_equiv
-from train import SMPLX_layer, get_nc_and_view_channel, kinematic_layer_SO3_v2
+from train_ours import SMPLX_layer, get_nc_and_view_channel, kinematic_layer_SO3_v2
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -23,6 +23,8 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", type=int, default=15, metavar="N", help="which model epoch to use (default: 15)")
     parser.add_argument("--rep_type", type=str, default="6d", metavar="N", help="aa, 6d")
     parser.add_argument("--part_num", type=int, default=22, metavar="N", help="part num of the SMPL body")
+    parser.add_argument("--gt-flag", type=bool)
+    parser.add_argument("--aug-flag", type=bool)
     parser.add_argument("--num_point", type=int, default=5000, metavar="N", help="point num sampled from mesh surface")
     parser.add_argument("--aug_type", type=str, default="so3", metavar="N", help="so3, zrot, no")
     parser.add_argument("--gt_part_seg", type=str, default="auto", metavar="N", help="")
@@ -40,13 +42,11 @@ if __name__ == "__main__":
 
     args.device = torch.device("cuda")
 
-    exps_folder = "gt_part_seg_{}_EPN_layer_{}_radius_{}_aug_{}_kc_{}".format(
-        args.gt_part_seg,
-        args.EPN_layer_num,
-        args.EPN_input_radius,
-        args.aug_type,
-        args.kinematic_cond,
-    )
+    exps_folder = "gt_flag_{}_aug_flag_{}_num_point_{}".format(args.gt_flag,
+                                                                args.aug_flag,
+                                                                args.num_point)
+
+    
     if args.num_point != 5000:
         exps_folder = exps_folder + f"_num_point_{args.num_point}"
     if args.i is not None:

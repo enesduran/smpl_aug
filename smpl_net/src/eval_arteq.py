@@ -1,5 +1,6 @@
 import argparse
 import os
+import trimesh  
 from pathlib import Path
 
 import numpy as np
@@ -10,7 +11,7 @@ import webdataset as wds
 
 from geometry import get_body_model
 from models_pointcloud import PointCloud_network_equiv
-from train import SMPLX_layer, get_nc_and_view_channel, kinematic_layer_SO3_v2
+from train_arteq import SMPLX_layer, get_nc_and_view_channel, kinematic_layer_SO3_v2
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -75,6 +76,7 @@ if __name__ == "__main__":
     torch.manual_seed(1)
 
     model_path = base_path / f"model_epochs_{args.epoch-1:08d}.pth"
+    os.makedirs(os.path.join(os.path.dirname(model_path), 'results'), exist_ok=True)
 
     model = PointCloud_network_equiv(option=args, z_dim=args.latent_num, nc=nc, part_num=args.part_num).to(args.device)
 
@@ -134,7 +136,9 @@ if __name__ == "__main__":
                         .item()
                     )
 
-                    import ipdb; ipdb.set_trace()
+                    trimesh.Trimesh(vertices=pred_vertices, faces=body_model.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_pred_{i:04d}.obj'))
+                    trimesh.PointCloud(pcl_data[0].cpu().numpy()).export(os.path.join(os.path.dirname(model_path), 'results', f'pc_{i:04d}.ply'))
+                    
 
         print(f"v2v={np.mean(list(v2v.values())):.3f} \
               joint_err={np.mean(list(joint_err.values())):.3f} \
