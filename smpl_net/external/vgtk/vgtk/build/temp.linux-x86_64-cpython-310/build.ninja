@@ -23,8 +23,8 @@ rule cuda_compile
 
 
 
-build /lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/grouping_cuda.o: compile /lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/cuda/grouping_cuda.cpp
-build /lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/grouping_cuda_kernel.o: cuda_compile /lustre/fast/fast/eduran2/smpl_aug/smpl_net/ArtEq/external/vgtk/vgtk/cuda/grouping_cuda_kernel.cu
+build /lustre/fast/fast/eduran2/smpl_aug/smpl_net/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/grouping_cuda.o: compile /lustre/fast/fast/eduran2/smpl_aug/smpl_net/external/vgtk/vgtk/cuda/grouping_cuda.cpp
+build /lustre/fast/fast/eduran2/smpl_aug/smpl_net/external/vgtk/vgtk/build/temp.linux-x86_64-cpython-310/cuda/grouping_cuda_kernel.o: cuda_compile /lustre/fast/fast/eduran2/smpl_aug/smpl_net/external/vgtk/vgtk/cuda/grouping_cuda_kernel.cu
 
 
 

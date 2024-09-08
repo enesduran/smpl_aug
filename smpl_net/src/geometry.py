@@ -11,7 +11,7 @@ def get_body_model(model_type, gender, batch_size, device="cpu", ext="pkl"):
     gender: male, female, neutral
     batch_size: an positive integar
     """
-    mtype = model_type.upper()
+    
     if gender != "neutral":
         if not isinstance(gender, str):
             gender = str(gender.astype(str)).upper()
@@ -20,7 +20,8 @@ def get_body_model(model_type, gender, batch_size, device="cpu", ext="pkl"):
     else:
         gender = gender.upper()
 
-    body_model_path = f"./data/{model_type}_model/{mtype}_{gender}.{ext}"
+    # body_model_path = f"./data/{model_type}_model/{model_type.upper()}_{gender}.{ext}"
+    body_model_path = f"../body_models/{model_type}/{model_type.upper()}_{gender}.{ext}"
 
     body_model = smplx.create(
         body_model_path,

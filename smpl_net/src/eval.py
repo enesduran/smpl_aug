@@ -91,23 +91,22 @@ if __name__ == "__main__":
         with torch.inference_mode():
             for tar_path in tqdm.tqdm(sorted(tar_folder.glob("*.tar"), key=lambda x: x.stem)):
                 dataset = wds.WebDataset(str(tar_path)).decode().to_tuple("input.pth")
+                
                 for i, (batch,) in enumerate(dataset):
                     pcl_data = batch["pcl_data"][: args.num_point][None].cuda()
-                    pred_joint, pred_pose, pred_shape, trans_feat = model(
-                        pcl_data, None, None, None, is_optimal_trans=False, parents=parents
-                    )
+                    pred_joint, pred_pose, pred_shape, trans_feat = \
+                        model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
 
                     pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
 
                     trans_feat = torch.zeros((1, 3)).cuda()
 
-                    pred_joints_pos, pred_vertices = SMPLX_layer(
-                        body_model,
-                        pred_shape,
-                        trans_feat,
-                        pred_joint_pose,
-                        rep="rotmat",
-                    )
+                    pred_joints_pos, pred_vertices = SMPLX_layer(body_model,
+                                                                pred_shape,
+                                                                trans_feat,
+                                                                pred_joint_pose,
+                                                                rep="rotmat")
+
                     pred_joints_pos = pred_joints_pos[0].cpu()
                     pred_vertices = pred_vertices[0].cpu()
 
@@ -135,6 +134,8 @@ if __name__ == "__main__":
                         .item()
                     )
 
-        print(
-            f"v2v={np.mean(list(v2v.values())):.3f} joint_err={np.mean(list(joint_err.values())):.3f} part_acc={100*np.mean(list(acc.values())):.3f}"
-        )
+                    import ipdb; ipdb.set_trace()
+
+        print(f"v2v={np.mean(list(v2v.values())):.3f} \
+              joint_err={np.mean(list(joint_err.values())):.3f} \
+              part_acc={100*np.mean(list(acc.values())):.3f}")

@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from torch_scatter import scatter_mean
 
 from amass_ptc_loader import AMASSDataset
+from data import DFaustDataset
 from backbones import get_part_seg_loss
 from geometry import (
     aug_so3_ptc,
@@ -117,9 +118,11 @@ def sample_points(vertices, faces, count, fix_sample=False, sample_type="trimesh
 
 
 def get_pointcloud(vertices, n_points_surface, points_sigma):
+
+    import ipdb; ipdb.set_trace()
+
     points_surface, points_surface_lbs = sample_points(
-        vertices=vertices.cpu().numpy(), faces=body_model_faces, count=n_points_surface
-    )
+        vertices=vertices.cpu().numpy(), faces=body_model_faces, count=n_points_surface)
 
     points_surface = torch.from_numpy(points_surface).to(vertices.device)
     points_surface_lbs = torch.from_numpy(points_surface_lbs).to(vertices.device)
@@ -169,84 +172,71 @@ def train(args, model, body_model, optimizer, train_loader):
 
     pbar = tqdm.tqdm(train_loader)
     for batch_data in pbar:
-        motion_pose_aa = batch_data["rotations"].to(args.device)
+
+        import ipdb; ipdb.set_trace()
+
+        motion_pose_aa = batch_data["pose"].to(args.device)
+        motion_trans = batch_data["transl"].to(args.device)
+        betas = batch_data["betas"][:, None, :].to(args.device)
+
+        B, _ = motion_trans.size()
 
         if args.aug_type == "so3":
             global_root = motion_pose_aa[:, 0]
             global_root_aug = aug_so3_ptc(global_root)
             motion_pose_aa[:, 0] = global_root_aug
 
-        motion_trans = batch_data["translation"].to(args.device)
-        B, _ = motion_trans.size()
+        import ipdb; ipdb.set_trace()
 
         motion_pose_rotmat = batch_rodrigues(motion_pose_aa.reshape(-1, 3)).reshape(B, -1, 3, 3)
         motion_pose_rotmat_global = local_to_global_bone_transformation(motion_pose_rotmat, parents)
 
-        betas = batch_data["body_shape"][:, None, :].to(args.device)
-
         gt_joints_pos, gt_vertices = SMPLX_layer(body_model, betas, motion_trans, motion_pose_rotmat, rep="rotmat")
 
         pcl_data, label_data, pcl_lbs = get_pointcloud(gt_vertices, args.num_point, points_sigma=0.001)
-        optimal_trans = False
 
+        import ipdb; ipdb.set_trace()
+  
         losses = {}
 
         if epoch < 1:
             gt_part_seg = to_categorical(label_data, 22).cuda()
         else:
             gt_part_seg = None
-
-        gt_bipart = None
-
+ 
         pred_joint, pred_pose, pred_shape, trans_feat = model(
-            pcl_data, gt_part_seg, gt_bipart, pcl_lbs, is_optimal_trans=optimal_trans, parents=parents
-        )
+            pcl_data, gt_part_seg, None, pcl_lbs, is_optimal_trans=False, parents=parents)
 
         gt_joints_set = [10, 11]
 
-        pred_pose[:, gt_joints_set] = motion_pose_rotmat_global.reshape(pred_pose.shape[0], pred_pose.shape[1], -1)[
-            :, gt_joints_set
-        ]
+        pred_pose[:, gt_joints_set] = motion_pose_rotmat_global.reshape(pred_pose.shape[0], pred_pose.shape[1], -1)[:, gt_joints_set]
 
         pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
 
-        pose_params_loss_global = norm_loss(pred_pose[0, :22], motion_pose_rotmat_global[0, :22], loss_type="l2")
-
-        angle_loss = pose_params_loss_global
-
+        angle_loss = norm_loss(pred_pose[0, :22], motion_pose_rotmat_global[0, :22], loss_type="l2")
+ 
         pred_joints_pos, pred_vertices = SMPLX_layer(
-            body_model, pred_shape, motion_trans, pred_joint_pose, rep="rotmat"
-        )
+            body_model, pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
 
         pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
         gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
 
-        losses["seg_loss"] = (
-            point_cls_loss(
-                pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
-                label_data.reshape(
-                    -1,
-                ),
-                trans_feat,
-            )
-            * args.part_w
-        )
+        losses["seg_loss"] = (point_cls_loss(
+                                            pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
+                                            label_data.reshape(-1, ), trans_feat,)  * args.part_w)
 
         losses["angle_recon"] = angle_loss * args.angle_w
 
         losses["beta"] = F.mse_loss(pred_shape, betas.reshape(B, -1)[:, :10])
 
-        losses["joints_pos"] = (
-            F.mse_loss(gt_joints_pos.reshape(-1, 45, 3), pred_joints_pos.reshape(-1, 45, 3)) * args.jpos_w
-        )
+        losses["joints_pos"] = (F.mse_loss(gt_joints_pos.reshape(-1, 45, 3), pred_joints_pos.reshape(-1, 45, 3)) * args.jpos_w)
 
         losses["vertices"] = F.mse_loss(gt_vertices, pred_vertices) * args.vertex_w
 
         losses["normal"] = surface_normal_loss(pred_vertices, gt_vertices).mean() * args.normal_w
 
         losses["marker"] = (
-            marker_loss(verts_pred=pred_vertices, verts_gt=gt_vertices, markers=markers_idx) * args.vertex_w * 2
-        )
+            marker_loss(verts_pred=pred_vertices, verts_gt=gt_vertices, markers=markers_idx) * args.vertex_w * 2)
 
         losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
 
@@ -274,29 +264,20 @@ def train(args, model, body_model, optimizer, train_loader):
         optimizer.step()
 
         pred_choice = pred_joint.clone().reshape(-1, part_num).data.max(1)[1]
-        correct = (
-            pred_choice.eq(
-                label_data.reshape(
-                    -1,
-                ).data
-            )
-            .cpu()
-            .sum()
-        )
+        correct = (pred_choice.eq(label_data.reshape(-1,).data).cpu().sum())
+
         batch_correct = correct.item() / (args.batch_size * args.num_point)
 
         pbar.set_description(f"Batch part acc: {batch_correct:.03f}")
+        
     return all_loss
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--batch_size", type=int, default=1, metavar="N", help="input batch size for training (default: 128)"
-    )
-    parser.add_argument(
-        "--latent_num", type=int, default=128, metavar="N", help="input batch size for training (default: 128)"
-    )
+    parser.add_argument("--batch_size", type=int, default=1, metavar="N", help="input batch size for training (default: 128)")
+    
+    parser.add_argument("--latent_num", type=int, default=128, metavar="N", help="input batch size for training (default: 128)")
     parser.add_argument("--epochs", type=int, default=15, metavar="N", help="number of epochs to train (default: 10)")
     parser.add_argument("--lr", type=float, default=1e-4, metavar="N", help="learning rate")
     parser.add_argument("--seed", type=int, default=1, metavar="S", help="random seed (default: 1)")
@@ -305,17 +286,17 @@ if __name__ == "__main__":
     parser.add_argument("--num_point", type=int, default=5000, metavar="N", help="point num sampled from mesh surface")
     parser.add_argument("--aug_type", type=str, default="so3", metavar="N", help="so3, zrot, no")
     parser.add_argument("--gt_part_seg", type=str, default="auto", metavar="N", help="")
+    parser.add_argument("--gt-flag", type=bool)
+    parser.add_argument("--aug-flag", type=bool)
     parser.add_argument("--EPN_input_radius", type=float, default=0.4, help="train from pretrained model")
     parser.add_argument("--EPN_layer_num", type=int, default=2, metavar="N", help="point num sampled from mesh surface")
-    parser.add_argument(
-        "--kinematic_cond", type=str, default="yes", metavar="N", help="point num sampled from mesh surface"
-    )
+    parser.add_argument("--kinematic_cond", type=str, default="yes", metavar="N", help="point num sampled from mesh surface")
     parser.add_argument("--part_w", type=float, default=5, help="")
     parser.add_argument("--angle_w", type=float, default=5, help="")
     parser.add_argument("--jpos_w", type=float, default=1e2, help="")
     parser.add_argument("--vertex_w", type=float, default=1e2, help="")
     parser.add_argument("--normal_w", type=float, default=1e0, help="")
-    parser.add_argument("--i", type=int, default=None, help="")
+    
 
     args = parser.parse_args()
     args.cuda = torch.cuda.is_available()
@@ -324,17 +305,13 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     args.device = torch.device("cuda" if args.cuda else "cpu")
 
-    exps_folder = "gt_part_seg_{}_EPN_layer_{}_radius_{}_aug_{}_kc_{}".format(
-        args.gt_part_seg,
-        args.EPN_layer_num,
-        args.EPN_input_radius,
-        args.aug_type,
-        args.kinematic_cond,
-    )
-    if args.num_point != 5000:
-        exps_folder = exps_folder + f"_num_point_{args.num_point}"
-    if args.i is not None:
-        exps_folder = exps_folder + f"_{args.i}"
+    exps_folder = "gt_part_seg_{}_EPN_layer_{}_radius_{}_aug_{}_kc_{}_num_point_{}".format(args.gt_part_seg,
+                                                                                        args.EPN_layer_num,
+                                                                                        args.EPN_input_radius,
+                                                                                        args.aug_type,
+                                                                                        args.kinematic_cond,
+                                                                                        args.num_point)
+   
     output_folder = os.path.sep.join(["./experiments", exps_folder])
 
     part_num = args.part_num
@@ -347,30 +324,32 @@ if __name__ == "__main__":
         option=args,
         z_dim=args.latent_num,
         nc=nc,
-        part_num=part_num,
-    ).to(args.device)
+        part_num=part_num).to(args.device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    dataset = AMASSDataset()
+    # dataset = AMASSDataset()
+    train_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=True, gt_flag=args.gt_flag, aug_flag=args.aug_flag)
+    # test_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=False, gt_flag=args.gt_flag, aug_flag=False)
 
     body_model = get_body_model(model_type="smpl", gender="male", batch_size=args.batch_size, device="cuda")
 
     body_model_faces = body_model.faces.astype(int)
-
     parents = body_model.parents[:22]
-
     gt_lbs = body_model.lbs_weights
 
     surface_normal_loss = NormalVectorLoss(face=body_model.faces.astype(int))
     point_cls_loss = get_part_seg_loss()
 
-    train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, pin_memory=True, drop_last=True)
-
+    train_loader = DataLoader(train_dataset, 
+                              batch_size=args.batch_size, 
+                              shuffle=True, 
+                              pin_memory=True, 
+                              drop_last=True,
+                              collate_fn=lambda x: x)
+ 
     for epoch in range(args.epochs):
         average_all_loss = train(args, model, body_model, optimizer, train_loader)
 
-        torch.save(
-            model.state_dict(),
-            os.path.join(output_folder, f"model_epochs_{epoch:08d}.pth"),
-        )
+
+        torch.save(model.state_dict(), os.path.join(output_folder, f"model_epochs_{epoch:08d}.pth"))
