@@ -5,7 +5,6 @@ python src/train.py \
 --batch_size 2 \
 --epochs 15 \
 --gt_part_seg auto \
---i 0 \
 --gt-flag false \
 --aug-flag true \
 --kinematic_cond yes \

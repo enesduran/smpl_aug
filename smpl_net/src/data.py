@@ -14,6 +14,8 @@ class DFaustDataset(torch.utils.data.Dataset):
         self.aug_flag = aug_flag
         self.data_path = data_path
         self.setting_name = setting_name
+        self.max_point_num = 120000
+
 
         self.train_flag = 'train' if train_flag else 'test'
         self.dataloader_path = f'data/{self.train_flag}_GT_{gt_flag}_AUG_{aug_flag}.npz'
@@ -26,7 +28,7 @@ class DFaustDataset(torch.utils.data.Dataset):
         else:
             print(f"Loading already processed data: {self.train_flag}")
             self.data_dict = self.load_data()
-
+        
         
 
     def process_data(self):
@@ -59,14 +61,16 @@ class DFaustDataset(torch.utils.data.Dataset):
             data_dict_i['aug_flag'] = seq_smpl_params['aug_flag']
             data_dict_i['timestep'] = seq_smpl_params['timestep']
             data_dict_i['gt_flag'] = self.gt_flag
- 
+            data_dict_i['gender'] = 'neutral'
+   
             # learning-related variables
-            data_dict_i['point_cloud'] = [ptc.vertices.tolist()]
-            data_dict_i['betas'] = seq_smpl_params['betas']
-            data_dict_i['trans'] = seq_smpl_params['transl'] 
-            data_dict_i['global_orient'] = seq_smpl_params['global_orient']
-            data_dict_i['pose'] = seq_smpl_params['body_pose']
-            
+            data_dict_i['betas'] = seq_smpl_params['betas'][0]
+            data_dict_i['trans'] = seq_smpl_params['transl'][0]
+            data_dict_i['global_orient'] = seq_smpl_params['global_orient'][0]
+            data_dict_i['pose'] = seq_smpl_params['body_pose'][0]
+  
+            # make sure the number of points is the same, if not, pad with zeros
+            data_dict_i['point_cloud'] = np.concatenate([ptc.vertices, np.zeros((self.max_point_num - ptc.vertices.shape[0], 3))], axis=0)
             data_dict[str(_i_)] = data_dict_i
           
         return data_dict

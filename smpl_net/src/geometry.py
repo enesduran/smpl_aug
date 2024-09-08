@@ -59,6 +59,7 @@ def aug_so3_ptc(rot_in):
         will add a degree from a full circle to the zrotations
     """
 
+    
     bz, dim = rot_in.shape
     rot_in = rot_in.reshape(-1, dim)
     rnd_so3rot = torch.distributions.Uniform(low=-np.pi, high=np.pi).sample((bz, 3)).to(rot_in.device)

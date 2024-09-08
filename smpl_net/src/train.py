@@ -19,7 +19,7 @@ from geometry import (
     get_body_model,
     rotation_matrix_to_angle_axis,
 )
-from loss_func import NormalVectorLoss, marker_loss, norm_loss
+from loss_func import NormalVectorLoss, norm_loss
 from models_pointcloud import PointCloud_network_equiv
 
 torch.backends.cudnn.allow_tf32 = False
@@ -117,10 +117,7 @@ def sample_points(vertices, faces, count, fix_sample=False, sample_type="trimesh
     return trimesh_sampling(vertices, faces, count)
 
 
-def get_pointcloud(vertices, n_points_surface, points_sigma):
-
-    import ipdb; ipdb.set_trace()
-
+def get_pointcloud_(vertices, n_points_surface, points_sigma):
     points_surface, points_surface_lbs = sample_points(
         vertices=vertices.cpu().numpy(), faces=body_model_faces, count=n_points_surface)
 
@@ -133,6 +130,18 @@ def get_pointcloud(vertices, n_points_surface, points_sigma):
     points_label = labels[None, :].repeat(vertices.size(0), 1)
 
     return points_surface.float(), points_label, points_surface_lbs
+
+
+def get_pointcloud(pc_list):
+   
+    points_surface_list = []
+
+    for pc in pc_list:
+
+        rand_idx = np.random.choice(len(pc), args.num_point, replace=False)
+        points_surface_list.append(pc[None, rand_idx])
+
+    return torch.vstack(points_surface_list).to(args.device).float()
 
 
 def get_joint_label_merged(lbs_weights):
@@ -173,39 +182,37 @@ def train(args, model, body_model, optimizer, train_loader):
     pbar = tqdm.tqdm(train_loader)
     for batch_data in pbar:
 
-        import ipdb; ipdb.set_trace()
-
-        motion_pose_aa = batch_data["pose"].to(args.device)
-        motion_trans = batch_data["transl"].to(args.device)
+        motion_pose_aa = batch_data["pose"].to(args.device)        
+        motion_trans = batch_data["trans"].to(args.device)
         betas = batch_data["betas"][:, None, :].to(args.device)
+        pc_data = batch_data["point_cloud"].to(args.device) 
 
+        # discard te 0 entries 
+        pc_data_list = [elem[elem.sum(-1) != 0] for elem in pc_data]
+        
         B, _ = motion_trans.size()
-
+ 
         if args.aug_type == "so3":
-            global_root = motion_pose_aa[:, 0]
+
+            global_root = batch_data["global_orient"].to(args.device)
             global_root_aug = aug_so3_ptc(global_root)
-            motion_pose_aa[:, 0] = global_root_aug
 
-        import ipdb; ipdb.set_trace()
-
-        motion_pose_rotmat = batch_rodrigues(motion_pose_aa.reshape(-1, 3)).reshape(B, -1, 3, 3)
+        # concatenate with the global_orient
+        motion_pose_aa = torch.cat([global_root_aug, motion_pose_aa], dim=1).reshape(-1, 3)
+            
+        motion_pose_rotmat = batch_rodrigues(motion_pose_aa).reshape(B, -1, 3, 3)
         motion_pose_rotmat_global = local_to_global_bone_transformation(motion_pose_rotmat, parents)
-
+ 
         gt_joints_pos, gt_vertices = SMPLX_layer(body_model, betas, motion_trans, motion_pose_rotmat, rep="rotmat")
 
-        pcl_data, label_data, pcl_lbs = get_pointcloud(gt_vertices, args.num_point, points_sigma=0.001)
+        pcl_data = get_pointcloud(pc_data_list)
 
-        import ipdb; ipdb.set_trace()
-  
+
         losses = {}
-
-        if epoch < 1:
-            gt_part_seg = to_categorical(label_data, 22).cuda()
-        else:
-            gt_part_seg = None
- 
+  
         pred_joint, pred_pose, pred_shape, trans_feat = model(
-            pcl_data, gt_part_seg, None, pcl_lbs, is_optimal_trans=False, parents=parents)
+            pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
+
 
         gt_joints_set = [10, 11]
 
@@ -215,30 +222,21 @@ def train(args, model, body_model, optimizer, train_loader):
 
         angle_loss = norm_loss(pred_pose[0, :22], motion_pose_rotmat_global[0, :22], loss_type="l2")
  
-        pred_joints_pos, pred_vertices = SMPLX_layer(
-            body_model, pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
+        pred_joints_pos, pred_vertices = SMPLX_layer(body_model, pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
 
-        pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
-        gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
-
-        losses["seg_loss"] = (point_cls_loss(
-                                            pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
-                                            label_data.reshape(-1, ), trans_feat,)  * args.part_w)
+        # pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
+        # gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
+        # losses["seg_loss"] = (point_cls_loss(pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
+        #                                     label_data.reshape(-1, ), trans_feat,)  * args.part_w)
+        # losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
 
         losses["angle_recon"] = angle_loss * args.angle_w
-
         losses["beta"] = F.mse_loss(pred_shape, betas.reshape(B, -1)[:, :10])
-
         losses["joints_pos"] = (F.mse_loss(gt_joints_pos.reshape(-1, 45, 3), pred_joints_pos.reshape(-1, 45, 3)) * args.jpos_w)
-
         losses["vertices"] = F.mse_loss(gt_vertices, pred_vertices) * args.vertex_w
-
         losses["normal"] = surface_normal_loss(pred_vertices, gt_vertices).mean() * args.normal_w
+        losses["marker"] = F.mse_loss(pred_vertices[:, markers_idx, :], gt_vertices[:, markers_idx, :]) * args.vertex_w * 2
 
-        losses["marker"] = (
-            marker_loss(verts_pred=pred_vertices, verts_gt=gt_vertices, markers=markers_idx) * args.vertex_w * 2)
-
-        losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
 
         all_loss = 0.0
         losses_key = losses.keys()
@@ -263,12 +261,13 @@ def train(args, model, body_model, optimizer, train_loader):
 
         optimizer.step()
 
-        pred_choice = pred_joint.clone().reshape(-1, part_num).data.max(1)[1]
-        correct = (pred_choice.eq(label_data.reshape(-1,).data).cpu().sum())
+        # pred_choice = pred_joint.clone().reshape(-1, part_num).data.max(1)[1]
+        # correct = (pred_choice.eq(label_data.reshape(-1,).data).cpu().sum())
 
-        batch_correct = correct.item() / (args.batch_size * args.num_point)
+        # batch_correct = correct.item() / (args.batch_size * args.num_point)
 
-        pbar.set_description(f"Batch part acc: {batch_correct:.03f}")
+        # pbar.set_description(f"Batch part acc: {batch_correct:.03f}")
+        pbar.set_description(f"Training Loss: {all_loss.item():.02f}")
         
     return all_loss
 
@@ -320,19 +319,18 @@ if __name__ == "__main__":
 
     nc, _ = get_nc_and_view_channel(args)
 
-    model = PointCloud_network_equiv(
-        option=args,
-        z_dim=args.latent_num,
-        nc=nc,
-        part_num=part_num).to(args.device)
+    model = PointCloud_network_equiv(option=args,
+                                    z_dim=args.latent_num,
+                                    nc=nc,
+                                    part_num=part_num).to(args.device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # dataset = AMASSDataset()
     train_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=True, gt_flag=args.gt_flag, aug_flag=args.aug_flag)
-    # test_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=False, gt_flag=args.gt_flag, aug_flag=False)
+    test_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=False, gt_flag=args.gt_flag, aug_flag=False)
 
-    body_model = get_body_model(model_type="smpl", gender="male", batch_size=args.batch_size, device="cuda")
+    body_model = get_body_model(model_type="smpl", gender="neutral", batch_size=args.batch_size, device="cuda")
 
     body_model_faces = body_model.faces.astype(int)
     parents = body_model.parents[:22]
@@ -345,11 +343,8 @@ if __name__ == "__main__":
                               batch_size=args.batch_size, 
                               shuffle=True, 
                               pin_memory=True, 
-                              drop_last=True,
-                              collate_fn=lambda x: x)
+                              drop_last=True)
  
     for epoch in range(args.epochs):
-        average_all_loss = train(args, model, body_model, optimizer, train_loader)
-
-
+        average_all_loss = train(args, model, body_model, optimizer, train_loader) 
         torch.save(model.state_dict(), os.path.join(output_folder, f"model_epochs_{epoch:08d}.pth"))
