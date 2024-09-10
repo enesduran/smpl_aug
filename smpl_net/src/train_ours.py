@@ -35,6 +35,19 @@ markers_idx = torch.tensor([3470, 3171, 3327, 857, 1812, 628, 182, 3116, 3040, 2
                             5322, 4927, 5686, 4598, 6633, 3506, 3508])
 # fmt: on
 
+import nvidia_smi
+nvidia_smi.nvmlInit()
+
+def get_gpu():
+    handle = nvidia_smi.nvmlDeviceGetHandleByIndex(0)
+    info = nvidia_smi.nvmlDeviceGetMemoryInfo(handle)
+    print("Device {}: {}, Memory : ({:.2f}% free): {:.2f} GB (total), {:.2f} GB (free), {:.2f} GB (used)".format(
+            0, nvidia_smi.nvmlDeviceGetName(handle), 
+            100 * info.free / info.total, 
+            info.total / 1073741824, 
+            info.free / 1073741824, 
+            info.used / 1073741824)) 
+    
 
 def to_categorical(y, num_classes):
     """1-hot encodes a tensor."""
@@ -116,17 +129,30 @@ def sample_points(vertices, faces, count, fix_sample=False, sample_type="trimesh
     return trimesh_sampling(vertices, faces, count)
 
 
-def get_pointcloud_(vertices, n_points_surface, points_sigma):
-    points_surface, points_surface_lbs = sample_points(
-        vertices=vertices.cpu().numpy(), faces=body_model_faces, count=n_points_surface)
+def get_pointcloud_(vertices_list, n_points_surface):
 
-    points_surface = torch.from_numpy(points_surface).to(vertices.device)
-    points_surface_lbs = torch.from_numpy(points_surface_lbs).to(vertices.device)
+    points_surface_list, points_surface_lbs_list, points_label_list = [], [], []
 
-    labels = get_joint_label_merged(points_surface_lbs)
+    for vertices in vertices_list:
 
-    points_surface += points_sigma * torch.randn(points_surface.shape[1], 3).to(vertices.device)
-    points_label = labels[None, :].repeat(vertices.size(0), 1)
+        n_points_surface = vertices.shape[0]
+
+        points_surface, points_surface_lbs = sample_points(vertices=vertices.cpu().numpy()[None], 
+                                                        faces=body_model_faces, 
+                                                            count=n_points_surface)
+
+        points_surface = torch.from_numpy(points_surface).to(vertices.device)
+        points_surface_lbs = torch.from_numpy(points_surface_lbs).to(vertices.device)
+        # points_label = get_joint_label_merged(points_surface_lbs)[None, :].repeat(vertices.size(0), 1)
+        points_label = get_joint_label_merged(points_surface_lbs)[None, :].repeat(1, 1)
+
+        points_surface_list.append(points_surface)
+        points_label_list.append(points_label)
+        points_surface_lbs_list.append(points_surface_lbs)
+
+    points_surface = torch.vstack(points_surface_list)
+    points_label = torch.vstack(points_label_list)
+    points_surface_lbs = torch.vstack(points_surface_lbs_list)
 
     return points_surface.float(), points_label, points_surface_lbs
 
@@ -185,10 +211,13 @@ def train(args, model, body_model, optimizer, train_loader):
         motion_trans = batch_data["trans"].to(args.device)
         betas = batch_data["betas"][:, None, :].to(args.device)
         pc_data = batch_data["point_cloud"].to(args.device) 
+        pc_data_idx = batch_data["closest_idx"].to(args.device)
 
         # discard te 0 entries 
         pc_data_list = [elem[elem.sum(-1) != 0] for elem in pc_data]
+        pc_data_list_idx = [elem[pc_data_idx[_i_]] for _i_, elem in enumerate(pc_data_list)]
         
+    
         B, _ = motion_trans.size()
  
         if args.aug_type == "so3":
@@ -203,13 +232,24 @@ def train(args, model, body_model, optimizer, train_loader):
  
         gt_joints_pos, gt_vertices = SMPLX_layer(body_model, betas, motion_trans, motion_pose_rotmat, rep="rotmat")
 
-        pcl_data = get_pointcloud(pc_data_list)
- 
-        losses = {}
-  
-        pred_joint, pred_pose, pred_shape, trans_feat = \
-            model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
+        # pcl_data = get_pointcloud(pc_data_list)
+    
+        pcl_data, label_data, pcl_lbs = get_pointcloud_(pc_data_list_idx, args.num_point)
 
+        losses = {}
+
+        if epoch < 1:
+            gt_part_seg = to_categorical(label_data, 22).cuda()
+        else:
+            gt_part_seg = None
+
+        # get_gpu()
+
+        pred_joint, pred_pose, pred_shape, trans_feat = model(
+            pcl_data, gt_part_seg, None, pcl_lbs, is_optimal_trans=False, parents=parents)
+
+        # pred_joint, pred_pose, pred_shape, trans_feat = \
+        #     model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
 
         gt_joints_set = [10, 11]
 
@@ -221,12 +261,19 @@ def train(args, model, body_model, optimizer, train_loader):
  
         pred_joints_pos, pred_vertices = SMPLX_layer(body_model, pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
 
+        pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
+        gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
+
         losses["angle_recon"] = angle_loss * args.angle_w
         losses["beta"] = F.mse_loss(pred_shape, betas.reshape(B, -1)[:, :10])
         losses["joints_pos"] = (F.mse_loss(gt_joints_pos.reshape(-1, 45, 3), pred_joints_pos.reshape(-1, 45, 3)) * args.jpos_w)
         losses["vertices"] = F.mse_loss(gt_vertices, pred_vertices) * args.vertex_w
         losses["normal"] = surface_normal_loss(pred_vertices, gt_vertices).mean() * args.normal_w
         losses["marker"] = F.mse_loss(pred_vertices[:, markers_idx, :], gt_vertices[:, markers_idx, :]) * args.vertex_w * 2
+
+        losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
+        losses["seg_loss"] = (point_cls_loss(pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
+                                label_data.reshape(-1), trans_feat) * args.part_w)
 
 
         all_loss = 0.0
@@ -252,13 +299,12 @@ def train(args, model, body_model, optimizer, train_loader):
 
         optimizer.step()
 
-        # pred_choice = pred_joint.clone().reshape(-1, part_num).data.max(1)[1]
-        # correct = (pred_choice.eq(label_data.reshape(-1,).data).cpu().sum())
+        pred_choice = pred_joint.clone().reshape(-1, part_num).data.max(1)[1]
+        correct = (pred_choice.eq(label_data.reshape(-1,).data).cpu().sum())
 
-        # batch_correct = correct.item() / (args.batch_size * args.num_point)
+        batch_correct = correct.item() / (args.batch_size * args.num_point)
 
-        # pbar.set_description(f"Batch part acc: {batch_correct:.03f}")
-        pbar.set_description(f"Training Loss: {all_loss.item():.02f}")
+        pbar.set_description(f"Batch part acc: {batch_correct:.03f} Training Loss: {all_loss.item():.02f}")
         
     return all_loss
 
@@ -324,13 +370,14 @@ if __name__ == "__main__":
 
     surface_normal_loss = NormalVectorLoss(face=body_model.faces.astype(int))
     point_cls_loss = get_part_seg_loss()
-
+ 
     train_loader = DataLoader(train_dataset, 
                               batch_size=args.batch_size, 
                               shuffle=True, 
                               pin_memory=True, 
                               drop_last=True)
- 
+
+
     for epoch in range(args.epochs):
         average_all_loss = train(args, model, body_model, optimizer, train_loader) 
         torch.save(model.state_dict(), os.path.join(output_folder, f"model_epochs_{epoch:08d}.pth"))

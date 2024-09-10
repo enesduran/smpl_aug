@@ -1,13 +1,19 @@
 import os
 import glob 
 import argparse
+import itertools
 from smpl_wrapper import SMPL_WRAPPER
  
  
 def demo():
- 
-    for motion_path in sorted(glob.glob('motion_data/DFaust/DFaust_67/*/*.npz')):
 
+
+    DFaust = glob.glob('motion_data/DFaust/DFaust_67/*/*.npz')
+    MPI_Limits = glob.glob('motion_data/PosePrior/MPI_Limits/*/*.npz')
+
+    data_list = list(itertools.chain(MPI_Limits, DFaust))
+ 
+    for motion_path in sorted(data_list):
         if 'shape.npz' in motion_path:
             continue
         else:

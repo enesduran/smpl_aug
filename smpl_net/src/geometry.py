@@ -11,17 +11,8 @@ def get_body_model(model_type, gender, batch_size, device="cpu", ext="pkl"):
     gender: male, female, neutral
     batch_size: an positive integar
     """
-    
-    if gender != "neutral":
-        if not isinstance(gender, str):
-            gender = str(gender.astype(str)).upper()
-        else:
-            gender = gender.upper()
-    else:
-        gender = gender.upper()
-
-    # body_model_path = f"./data/{model_type}_model/{model_type.upper()}_{gender}.{ext}"
-    body_model_path = f"../body_models/{model_type}/{model_type.upper()}_{gender}.{ext}"
+     
+    body_model_path = f"../body_models/{model_type}/{model_type.upper()}_{gender.upper()}.{ext}"
 
     body_model = smplx.create(
         body_model_path,
@@ -40,12 +31,10 @@ def get_body_model(model_type, gender, batch_size, device="cpu", ext="pkl"):
         create_leye_pose=True,
         create_reye_pose=True,
         create_transl=True,
-        batch_size=batch_size,
-    )
-    if device == "cuda":
-        return body_model.cuda()
-    else:
-        return body_model
+        batch_size=batch_size)
+
+    return body_model.cuda() if device == "cuda" else body_model
+        
 
 
 # Useful geometric operations, e.g. Perspective projection and a differentiable Rodrigues formula

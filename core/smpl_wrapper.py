@@ -7,9 +7,11 @@ import numpy as np
 from tqdm import tqdm
 import torch.nn as nn
 from loguru import logger
+
 import pytorch3d
 from pytorch3d.io import IO
 from pytorch3d import transforms
+from pytorch3d.ops.knn import knn_points 
 from simkinect.add_noise_smpl_no_discrete import mesh2pcd
 from pytorch3d.renderer import RasterizationSettings, MeshRasterizer, PerspectiveCameras
 
@@ -44,18 +46,28 @@ class SMPL_WRAPPER(nn.Module):
         self.verbose = verbose
 
         if use_layer:
-            self.model = smpl_aug.build_layer(model_path=model_folder,
-                                                    model_type=body_model_type, 
-                                                    clothing_option=clothing_option)
+            model_inp_dict = {'model_path': model_folder,
+                              'model_type':body_model_type, 
+                              'clothing_option':clothing_option}
+            
+            bm_male = smpl_aug.build_layer(**model_inp_dict)
+            bm_female = smpl_aug.build_layer(**model_inp_dict)
+            bm_neutral = smpl_aug.build_layer(**model_inp_dict)
+             
         else:
-            self.model = smpl_aug.create(model_path=model_folder,
-                            model_type=body_model_type,
-                            gender=gender, 
-                            use_face_contour=use_face_contour,
-                            num_betas=num_betas,
-                            use_pca=False,
-                            clothing_option=clothing_option, 
-                            verbose=verbose)
+            model_inp_dict = {'model_path': model_folder,
+                              'model_type': body_model_type,
+                              'use_face_contour': use_face_contour,
+                              'num_betas': num_betas,
+                              'use_pca': False,
+                              'clothing_option': clothing_option,
+                              'verbose': verbose}
+            
+            bm_male = smpl_aug.create(gender='male', **model_inp_dict)
+            bm_female = smpl_aug.create(gender='female', **model_inp_dict)
+            bm_neutral = smpl_aug.create(gender='neutral', **model_inp_dict)
+            
+        self.bm_dict = {"neutral": bm_neutral, 'male': bm_male, "female": bm_female}
 
         if render_flag:
             self.camera_config = camera_config
@@ -115,19 +127,18 @@ class SMPL_WRAPPER(nn.Module):
                 leye_pose = transforms.axis_angle_to_matrix(leye_pose.reshape(T, -1, 3))
                 jaw_pose = transforms.axis_angle_to_matrix(jaw_pose.reshape(T, -1, 3))
 
-
-        return self.model(betas=betas, 
-                    expression=expression,
-                    global_orient=global_orient,
-                    transl=transl,
-                    reye_pose=reye_pose,
-                    leye_pose=leye_pose,
-                    jaw_pose=jaw_pose,
-                    left_hand_pose=left_hand_pose,
-                    right_hand_pose=right_hand_pose,
-                    body_pose=body_pose,
-                    augment_pose=augment_pose_flag,
-                    **kwargs_dict)
+        return self.bm_dict[kwargs_dict.get('gender')](betas=betas, 
+                                                    expression=expression,
+                                                    global_orient=global_orient,
+                                                    transl=transl,
+                                                    reye_pose=reye_pose,
+                                                    leye_pose=leye_pose,
+                                                    jaw_pose=jaw_pose,
+                                                    left_hand_pose=left_hand_pose,
+                                                    right_hand_pose=right_hand_pose,
+                                                    body_pose=body_pose,
+                                                    augment_pose=augment_pose_flag,
+                                                    **kwargs_dict)
                
         
     
@@ -136,9 +147,15 @@ class SMPL_WRAPPER(nn.Module):
 
         motion_T = motion_dict["poses"].shape[0]
        
+        if type(motion_dict["gender"]) == np.ndarray:
+            gender = motion_dict["gender"].item()
+        else:
+            gender = motion_dict["gender"]
+
+
         cloth_types = np.ones((motion_T, 6), dtype=np.int64) * 3
         cloth_types[:, 3] = 1
-        kwargs_dict = {'cloth_types': cloth_types}
+        kwargs_dict = {'cloth_types': cloth_types, 'gender': gender}
 
         jaw_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
         reye_pose = torch.zeros((motion_T, 3), dtype=torch.float32)
@@ -216,7 +233,7 @@ class SMPL_WRAPPER(nn.Module):
 
         for i in tqdm(range(self.motion_data['motion_T'])):
 
-            motion_data_i = {k: v[i][None] if k not in ['motion_T', 'seq_name'] else v for k,v in self.motion_data.items() }
+            motion_data_i = {k: v[i][None] if k not in ['motion_T', 'seq_name', 'gender'] else v for k,v in self.motion_data.items() }
             
             if i == 0:
                 delta_cam_trans = torch.zeros_like(self.motion_data['transl'][0])   
@@ -239,9 +256,9 @@ class SMPL_WRAPPER(nn.Module):
 
                     if render_flag or self.render_flag:
     
-                        depth_gt_unscaled, depth_gt_scaled, noisy_depth, projected_pcd_gt, projected_pcd_noised = \
+                        _, depth_gt_scaled, noisy_depth, projected_pcd_gt, projected_pcd_noised = \
                                                                                         mesh2pcd(vertices, 
-                                                                                        self.model.faces, 
+                                                                                        self.bm_dict['neutral'].faces, 
                                                                                         self.camera_config_dict, 
                                                                                         self.cameras_batch, 
                                                                                         self.kinect_dot_pattern, 
@@ -259,14 +276,19 @@ class SMPL_WRAPPER(nn.Module):
                     # verts = torch.tensor(vertices) @ self.vertex2pcd_rot
                     verts = torch.tensor(vertices)
 
+                    idx_pcd, idx_pcd_noise = self.find_correspondence(verts, projected_pcd_gt, projected_pcd_noised)
+                    
                     # save body mesh data
                     motion_data_i['aug_flag'] = augment_pose_flag
                     motion_data_i['timestep'] = i
+                    motion_data_i['idx_pcd'] = idx_pcd
+                    motion_data_i['idx_pcd_noise'] = idx_pcd_noise
+ 
                     np.save(f'{outdir}/{setting_name}/body_data/{i:04d}{append_str}.npy', motion_data_i) 
 
                     # save body mesh 
                     pytorch3d.io.save_obj(f'{outdir}/{setting_name}/body_meshes/{i:04d}{append_str}.obj', 
-                            verts=verts, faces=torch.tensor(self.model.faces.astype(np.int32)))
+                            verts=verts, faces=torch.tensor(self.bm_dict['neutral'].faces.astype(np.int32)))
                              
 
             # update camera extrinsics between each frame
@@ -311,6 +333,22 @@ class SMPL_WRAPPER(nn.Module):
                                                 image_size=image_size_mult, 
                                                 in_ndc=False)
  
+    @staticmethod
+    def find_correspondence(bm_verts, point_cloud, point_cloud_noised):
+        
+
+        pc_closest_idx = knn_points(bm_verts[None].cuda(), 
+                                    point_cloud.get_cloud(index=0)[0][None], 
+                                    K=1, 
+                                    return_nn=True)[1][0, :, 0]
+        
+        pc_noisy_closest_idx = knn_points(bm_verts[None].cuda(),
+                                          point_cloud_noised.get_cloud(index=0)[0][None], 
+                                          K=1, 
+                                          return_nn=True)[1][0, :, 0]
+
+        return pc_closest_idx, pc_noisy_closest_idx 
+
 
     def update_camera_extrinsics(self):
         

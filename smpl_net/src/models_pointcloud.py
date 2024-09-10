@@ -126,9 +126,9 @@ class PointCloud_network_equiv(nn.Module):
         self, f_data, gt_part_seg=None, gt_bipart=None, pcl_lbs=None, debug=False, is_optimal_trans=False, parents=None
     ):
         B, N, C = f_data.size()
-
+ 
         r = self.encode(f_data)
-
+ 
         equiv_feat_xyz = r.xyz
         S = equiv_feat_xyz.shape[-1]
         equiv_feat = r.feats.permute(0, 1, 3, 2).reshape(B, -1, S)

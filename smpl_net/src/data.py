@@ -14,7 +14,7 @@ class DFaustDataset(torch.utils.data.Dataset):
         self.aug_flag = aug_flag
         self.data_path = data_path
         self.setting_name = setting_name
-        self.max_point_num = 120000
+        self.max_point_num = 150000
 
 
         self.train_flag = 'train' if train_flag else 'test'
@@ -61,18 +61,20 @@ class DFaustDataset(torch.utils.data.Dataset):
             data_dict_i['aug_flag'] = seq_smpl_params['aug_flag']
             data_dict_i['timestep'] = seq_smpl_params['timestep']
             data_dict_i['gt_flag'] = self.gt_flag
-            data_dict_i['gender'] = 'neutral'
-   
+            data_dict_i['gender'] = seq_smpl_params['gender']
+
             # learning-related variables
             data_dict_i['betas'] = seq_smpl_params['betas'][0]
             data_dict_i['trans'] = seq_smpl_params['transl'][0]
             data_dict_i['global_orient'] = seq_smpl_params['global_orient'][0]
             data_dict_i['pose'] = seq_smpl_params['body_pose'][0]
+
+            data_dict_i['closest_idx'] = seq_smpl_params['idx_pcd'].cpu() if self.gt_flag else seq_smpl_params['idx_pcd_noise'].cpu()
   
             # make sure the number of points is the same, if not, pad with zeros
             data_dict_i['point_cloud'] = np.concatenate([ptc.vertices, np.zeros((self.max_point_num - ptc.vertices.shape[0], 3))], axis=0)
             data_dict[str(_i_)] = data_dict_i
-          
+
         return data_dict
     
 
@@ -99,7 +101,10 @@ class DFaustDataset(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
-        return self.data_dict[str(index)]
+
+
+        return self.data_dict['0']
+        # return self.data_dict[str(index)]
     
 
 
