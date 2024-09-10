@@ -86,7 +86,7 @@ if __name__ == "__main__":
     model_path = base_path / f"model_epochs_{args.epoch-1:08d}.pth"
     os.makedirs(os.path.join(os.path.dirname(model_path), 'results'), exist_ok=True)
 
-    model = PointCloud_network_equiv(option=args, z_dim=args.latent_num, nc=nc, part_num=args.part_num).to(args.device)
+    model = PointCloud_network_equiv(option=args, z_dim=args.latent_num, nc=nc, part_num=len(parents)).to(args.device)
 
     print(f"Loading model from {model_path}")
     model.load_state_dict(torch.load(model_path))

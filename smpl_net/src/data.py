@@ -73,7 +73,10 @@ class DFaustDataset(torch.utils.data.Dataset):
   
             # make sure the number of points is the same, if not, pad with zeros
             data_dict_i['point_cloud'] = np.concatenate([ptc.vertices, np.zeros((self.max_point_num - ptc.vertices.shape[0], 3))], axis=0)
+            data_dict_i['index'] = _i_
+       
             data_dict[str(_i_)] = data_dict_i
+
 
         return data_dict
     
@@ -101,10 +104,8 @@ class DFaustDataset(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
-
-
-        return self.data_dict['0']
-        # return self.data_dict[str(index)]
+        index = 0
+        return self.data_dict[str(index)]
     
 
 

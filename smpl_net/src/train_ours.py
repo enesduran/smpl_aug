@@ -60,7 +60,7 @@ def local_to_global_bone_transformation(local_bone_transformation, parents):
     local_bone_transformation = F.normalize(local_bone_transformation, dim=-2).double()
 
     Rs = [local_bone_transformation[:, 0]]
-    for i in range(1, 22):
+    for i in range(1, len(parents)):
         Rs.append(torch.bmm(Rs[parents[i]], local_bone_transformation[:, i]))
 
     return torch.stack(Rs, dim=1).float()
@@ -75,7 +75,7 @@ def kinematic_layer_SO3_v2(global_bone_transformation, parents):
     global_bone_transformation = global_bone_transformation.reshape(B, K, 3, 3)
 
     root_joint = global_bone_transformation[:, 0:1]
-    joint_indices = torch.arange(1, 22)
+    joint_indices = torch.arange(1, len(parents))
     R_global = global_bone_transformation[:, joint_indices]
     R_parent = global_bone_transformation[:, parents[1:]]
     R_local = torch.bmm(
@@ -96,7 +96,7 @@ def get_nc_and_view_channel(args):
     return nc, view_channel
 
 
-def trimesh_sampling(vertices, faces, count):
+def trimesh_sampling(vertices, faces, count, gender):
     body_mesh = trimesh.Trimesh(vertices=vertices[0], faces=faces)
     _, sample_face_idx = trimesh.sample.sample_surface_even(body_mesh, count)
     if sample_face_idx.shape[0] != count:
@@ -111,7 +111,8 @@ def trimesh_sampling(vertices, faces, count):
     C = vertices[:, faces[sample_face_idx, 2], :]
     P = (1 - np.sqrt(r[:, 0:1])) * A + np.sqrt(r[:, 0:1]) * (1 - r[:, 1:]) * B + np.sqrt(r[:, 0:1]) * r[:, 1:] * C
 
-    lbs_w = gt_lbs.cpu().numpy()
+    
+    lbs_w = gt_lbs_dict[gender].cpu().numpy()
     A_lbs = lbs_w[faces[sample_face_idx, 0], :]
     B_lbs = lbs_w[faces[sample_face_idx, 1], :]
     C_lbs = lbs_w[faces[sample_face_idx, 2], :]
@@ -124,27 +125,32 @@ def trimesh_sampling(vertices, faces, count):
     return P, P_lbs
 
 
-def sample_points(vertices, faces, count, fix_sample=False, sample_type="trimesh"):
+def sample_points(vertices, faces, count, gender, fix_sample=False, sample_type="trimesh"):
     assert not fix_sample and sample_type == "trimesh"
-    return trimesh_sampling(vertices, faces, count)
+    return trimesh_sampling(vertices, faces, count, gender)
 
 
-def get_pointcloud_(vertices_list, n_points_surface):
+def get_pointcloud_(vertices_list, n_points_surface, gender_list):
 
     points_surface_list, points_surface_lbs_list, points_label_list = [], [], []
 
-    for vertices in vertices_list:
+    for _j_, vertices in enumerate(vertices_list):
 
         n_points_surface = vertices.shape[0]
 
         points_surface, points_surface_lbs = sample_points(vertices=vertices.cpu().numpy()[None], 
                                                         faces=body_model_faces, 
-                                                            count=n_points_surface)
+                                                            count=n_points_surface,
+                                                            gender=gender_list[_j_])
 
         points_surface = torch.from_numpy(points_surface).to(vertices.device)
         points_surface_lbs = torch.from_numpy(points_surface_lbs).to(vertices.device)
-        # points_label = get_joint_label_merged(points_surface_lbs)[None, :].repeat(vertices.size(0), 1)
-        points_label = get_joint_label_merged(points_surface_lbs)[None, :].repeat(1, 1)
+        
+        if len(parents) == 22:
+            points_label = get_joint_label_merged_arteq(points_surface_lbs)[None, :].repeat(1, 1)
+        else:
+            points_label = get_joint_label_merged(points_surface_lbs)[None, :].repeat(1, 1)
+            
 
         points_surface_list.append(points_surface)
         points_label_list.append(points_label)
@@ -169,7 +175,7 @@ def get_pointcloud(pc_list):
     return torch.vstack(points_surface_list).to(args.device).float()
 
 
-def get_joint_label_merged(lbs_weights):
+def get_joint_label_merged_arteq(lbs_weights):
     gt_joint = torch.argmax(lbs_weights, dim=1)
     gt_joint1 = torch.where((gt_joint == 22), 20, gt_joint)
     gt_joint2 = torch.where((gt_joint1 == 23), 21, gt_joint1)
@@ -178,6 +184,10 @@ def get_joint_label_merged(lbs_weights):
 
     return gt_joint2
 
+
+def get_joint_label_merged(lbs_weights): 
+    return torch.argmax(lbs_weights, dim=1)
+     
 
 def SMPLX_layer(body_model, betas, translation, motion_pose, rep="6d"):
     bz = body_model.batch_size
@@ -201,47 +211,47 @@ def SMPLX_layer(body_model, betas, translation, motion_pose, rep="6d"):
     return mesh_j_pose, mesh_rec
 
 
-def train(args, model, body_model, optimizer, train_loader):
+def train(args, model, bodymodel_dict, optimizer, train_loader):
     model.train()
 
     pbar = tqdm.tqdm(train_loader)
+  
     for batch_data in pbar:
 
         motion_pose_aa = batch_data["pose"].to(args.device)        
         motion_trans = batch_data["trans"].to(args.device)
         betas = batch_data["betas"][:, None, :].to(args.device)
-        pc_data = batch_data["point_cloud"].to(args.device) 
+        pc_data = batch_data["point_cloud"].to(args.device).float()
         pc_data_idx = batch_data["closest_idx"].to(args.device)
-
+        global_root = batch_data["global_orient"].to(args.device)
+        gender = batch_data["gender"][0]
+ 
         # discard te 0 entries 
         pc_data_list = [elem[elem.sum(-1) != 0] for elem in pc_data]
         pc_data_list_idx = [elem[pc_data_idx[_i_]] for _i_, elem in enumerate(pc_data_list)]
         
     
         B, _ = motion_trans.size()
- 
-        if args.aug_type == "so3":
-            global_root = batch_data["global_orient"].to(args.device)
-            global_root_aug = aug_so3_ptc(global_root)
-
+  
         # concatenate with the global_orient
-        motion_pose_aa = torch.cat([global_root_aug, motion_pose_aa], dim=1).reshape(-1, 3)
+        motion_pose_aa = torch.cat([global_root, motion_pose_aa], dim=1).reshape(-1, 3)
             
         motion_pose_rotmat = batch_rodrigues(motion_pose_aa).reshape(B, -1, 3, 3)
         motion_pose_rotmat_global = local_to_global_bone_transformation(motion_pose_rotmat, parents)
  
-        gt_joints_pos, gt_vertices = SMPLX_layer(body_model, betas, motion_trans, motion_pose_rotmat, rep="rotmat")
+        gt_joints_pos, gt_vertices = SMPLX_layer(bodymodel_dict[gender], betas, motion_trans, motion_pose_rotmat, rep="rotmat")
 
         # pcl_data = get_pointcloud(pc_data_list)
     
-        pcl_data, label_data, pcl_lbs = get_pointcloud_(pc_data_list_idx, args.num_point)
+        pcl_data, label_data, pcl_lbs = get_pointcloud_(pc_data_list_idx, args.num_point, gender_list=batch_data["gender"])
 
         losses = {}
 
         if epoch < 1:
-            gt_part_seg = to_categorical(label_data, 22).cuda()
+            gt_part_seg = to_categorical(label_data, len(parents)).cuda()
         else:
             gt_part_seg = None
+ 
 
         # get_gpu()
 
@@ -251,18 +261,38 @@ def train(args, model, body_model, optimizer, train_loader):
         # pred_joint, pred_pose, pred_shape, trans_feat = \
         #     model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
 
-        gt_joints_set = [10, 11]
-
-        pred_pose[:, gt_joints_set] = motion_pose_rotmat_global.reshape(pred_pose.shape[0], pred_pose.shape[1], -1)[:, gt_joints_set]
+        # gt_joints_set = [10, 11]
+        # pred_pose[:, gt_joints_set] = motion_pose_rotmat_global.reshape(pred_pose.shape[0], pred_pose.shape[1], -1)[:, gt_joints_set]
 
         pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
 
-        angle_loss = norm_loss(pred_pose[0, :22], motion_pose_rotmat_global[0, :22], loss_type="l2")
+        angle_loss = norm_loss(pred_pose[:, :len(parents)], motion_pose_rotmat_global[:, :len(parents)], loss_type="l2")
  
-        pred_joints_pos, pred_vertices = SMPLX_layer(body_model, pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
+        pred_joints_pos, pred_vertices = SMPLX_layer(bodymodel_dict[gender], pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
 
         pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
         gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
+
+        ##########################################
+        # from pytorch3d.ops.knn import knn_points 
+        # import trimesh
+
+        # for i__ in range(1):
+
+            
+        #     clo_pts = knn_points(gt_vertices[i__][None], pc_data_list[i__][None], K=1, return_nn=True)[1][0, :, 0]
+        #     clo_pts.cpu(), pc_data_idx[i__].cpu()
+
+        #     set(clo_pts.cpu().numpy()).difference(set(pc_data_idx[i__].cpu().numpy()))
+            
+
+        #     trimesh.Trimesh(vertices=gt_vertices[0].cpu(), faces=bodymodel_dict[gender].faces).export(os.path.join(f'rezz/body_gt_{i__:04d}.obj'))
+        #     trimesh.PointCloud(pc_data_list[i__][clo_pts].cpu().numpy()).export(os.path.join(f'rezz/pc_{i__:04d}.ply'))
+        #     trimesh.PointCloud(pc_data_list[i__][pc_data_idx[i__]].cpu().numpy()).export(os.path.join(f'rezz/_pc_{i__:04d}.ply'))
+        #     import ipdb; ipdb.set_trace()
+
+        ##########################################
+
 
         losses["angle_recon"] = angle_loss * args.angle_w
         losses["beta"] = F.mse_loss(pred_shape, betas.reshape(B, -1)[:, :10])
@@ -304,6 +334,7 @@ def train(args, model, body_model, optimizer, train_loader):
 
         batch_correct = correct.item() / (args.batch_size * args.num_point)
 
+        # print(batch_data['index'])
         pbar.set_description(f"Batch part acc: {batch_correct:.03f} Training Loss: {all_loss.item():.02f}")
         
     return all_loss
@@ -347,7 +378,28 @@ if __name__ == "__main__":
    
     output_folder = os.path.sep.join(["./experiments", exps_folder])
 
-    part_num = args.part_num
+
+    body_model_neutral = get_body_model(model_type="smpl", gender="neutral", 
+                                        batch_size=args.batch_size, device="cuda")
+    body_model_female = get_body_model(model_type="smpl", gender="female",
+                                        batch_size=args.batch_size, device="cuda")
+    body_model_male = get_body_model(model_type="smpl", gender="male", 
+                                     batch_size=args.batch_size, device="cuda")
+
+    bm_dict = {"neutral": body_model_neutral, 
+               "female": body_model_female,
+               "male": body_model_male}
+    
+
+    body_model_faces = bm_dict["neutral"].faces.astype(int)
+    parents = bm_dict["neutral"].parents[:22]
+    gt_lbs_dict = {'neutral': bm_dict["neutral"].lbs_weights,
+                   'male': bm_dict["male"].lbs_weights,
+                   'female': bm_dict["female"].lbs_weights} 
+    
+
+    part_num = len(parents)
+
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
@@ -361,14 +413,8 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     train_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=True, gt_flag=args.gt_flag, aug_flag=args.aug_flag)
-
-    body_model = get_body_model(model_type="smpl", gender="neutral", batch_size=args.batch_size, device="cuda")
-
-    body_model_faces = body_model.faces.astype(int)
-    parents = body_model.parents[:22]
-    gt_lbs = body_model.lbs_weights
-
-    surface_normal_loss = NormalVectorLoss(face=body_model.faces.astype(int))
+ 
+    surface_normal_loss = NormalVectorLoss(face=bm_dict["neutral"].faces.astype(int))
     point_cls_loss = get_part_seg_loss()
  
     train_loader = DataLoader(train_dataset, 
@@ -379,5 +425,5 @@ if __name__ == "__main__":
 
 
     for epoch in range(args.epochs):
-        average_all_loss = train(args, model, body_model, optimizer, train_loader) 
+        average_all_loss = train(args, model, bm_dict, optimizer, train_loader) 
         torch.save(model.state_dict(), os.path.join(output_folder, f"model_epochs_{epoch:08d}.pth"))

@@ -210,6 +210,7 @@ def train(args, model, body_model, optimizer, train_loader):
 
         pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
 
+    
         pose_params_loss_global = norm_loss(pred_pose[0, :22], motion_pose_rotmat_global[0, :22], loss_type="l2")
 
         angle_loss = pose_params_loss_global

@@ -6,7 +6,7 @@ python src/train_ours.py \
         --epochs 400 \
         --gt_part_seg auto \
         --gt-flag true \
-        --aug-flag true \
+        --aug-flag false \
         --kinematic_cond yes \
         --num_point 50000
 # 50000 if H100
