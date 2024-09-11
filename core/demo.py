@@ -12,6 +12,9 @@ def demo():
     MPI_Limits = glob.glob('motion_data/PosePrior/MPI_Limits/*/*.npz')
 
     data_list = list(itertools.chain(MPI_Limits, DFaust))
+
+    if len(data_list) == 0:
+        data_list = [args.motion_path]
  
     for motion_path in sorted(data_list):
         if 'shape.npz' in motion_path:
@@ -28,7 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('--body-model-type', choices=['smplx', 'smplh', 'smpl'], type=str,
                         help='Body Model to be used.')
     parser.add_argument('--clothing-option', choices=['clothed', 'minimal'], type=str,
-                        default='clothed', help='Flag for garmenting minimal body.')
+                        default='minimal', help='Flag for garmenting minimal body.')
     parser.add_argument('--model-folder', required=True, type=str,
                         help='The path to the model folder')
     parser.add_argument('--motion-path', required=True, type=str,
