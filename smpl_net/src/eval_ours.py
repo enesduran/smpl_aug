@@ -39,9 +39,9 @@ if __name__ == "__main__":
 
     args.device = torch.device("cuda")
 
-    exps_folder = "gt_flag_{}_aug_flag_{}_num_point_{}".format(args.gt_flag,
-                                                                args.aug_flag,
-                                                                args.num_point)
+    exps_folder = "GT_{}_AUG_{}_num_point_{}".format(args.gt_flag,
+                                                    args.aug_flag,
+                                                    args.num_point)
 
      
     output_folder = os.path.sep.join(["./experiments", exps_folder])
@@ -58,9 +58,9 @@ if __name__ == "__main__":
 
     torch.backends.cudnn.benchmark = True
 
-    body_model_neutral = get_body_model(model_type="smpl", gender="neutral", batch_size=1, device="cuda")
-    body_model_female = get_body_model(model_type="smpl", gender="female", batch_size=1, device="cuda")
     body_model_male = get_body_model(model_type="smpl", gender="male", batch_size=1, device="cuda")
+    body_model_female = get_body_model(model_type="smpl", gender="female", batch_size=1, device="cuda")
+    body_model_neutral = get_body_model(model_type="smpl", gender="neutral", batch_size=1, device="cuda")
 
     bm_dict = {"neutral": body_model_neutral, 
                "female": body_model_female,
@@ -107,7 +107,7 @@ if __name__ == "__main__":
             pred_joint, pred_pose, pred_shape, trans_feat = \
                 model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
 
-            get_gpu()
+            # get_gpu()
 
             pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
 
@@ -115,10 +115,10 @@ if __name__ == "__main__":
 
             assert len(batch_data['gender']) == 1
 
-            body_model = bm_dict[batch_data['gender'][0]]
+            bm_list = [bm_dict[g] for g in batch_data["gender"]]
 
 
-            pred_joints_pos, pred_vertices = SMPLX_layer(body_model,
+            pred_joints_pos, pred_vertices = SMPLX_layer(bm_list,
                                                         pred_shape,
                                                         trans_feat,
                                                         pred_joint_pose,
@@ -135,7 +135,7 @@ if __name__ == "__main__":
             body_pose[:, -6:] = 0
 
 
-            joints_gt, vertices_gt = SMPLX_layer(body_model,
+            joints_gt, vertices_gt = SMPLX_layer(bm_list,
                                                 betas,
                                                 transl,
                                                 torch.cat([global_orient, body_pose], dim=1),
@@ -149,10 +149,10 @@ if __name__ == "__main__":
             # acc[f"{i}"] = ((pred_joint[0].argmax(dim=1).cpu() == batch_data["label_data"][: args.num_point]).mean(dtype=float).item())
 
 
-            trimesh.Trimesh(vertices=pred_vertices.cpu(), faces=body_model.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_pred_{i:04d}.obj'))
-            trimesh.Trimesh(vertices=vertices_gt.cpu(), faces=body_model.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_gt_{i:04d}.obj'))
+            trimesh.Trimesh(vertices=pred_vertices.cpu(), faces=body_model_neutral.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_pred_{i:04d}.obj'))
+            trimesh.Trimesh(vertices=vertices_gt.cpu(), faces=body_model_neutral.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_gt_{i:04d}.obj'))
             trimesh.PointCloud(pcl_data[0].cpu().numpy()).export(os.path.join(os.path.dirname(model_path), 'results', f'pc_{i:04d}.ply'))
-            import ipdb; ipdb.set_trace()
+            # import ipdb; ipdb.set_trace()
 
     print(f"v2v={np.mean(list(v2v.values())):.3f} joint_err={np.mean(list(joint_err.values())):.3f}") 
             # part_acc={100*np.mean(list(acc.values())):.3f}")

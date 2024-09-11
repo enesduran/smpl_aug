@@ -104,7 +104,14 @@ class DFaustDataset(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
-        index = 0
+
+        # TF
+        if index in [2390, 2863, 506, 2383, 1731, 3037, 3648, 1237, 1129, 1809, 3211, 3504, 3452,
+                     2465]:
+            index = 0 
+        if index > 2465:
+            index = 0
+
         return self.data_dict[str(index)]
     
 

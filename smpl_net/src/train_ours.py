@@ -58,10 +58,14 @@ def to_categorical(y, num_classes):
 def local_to_global_bone_transformation(local_bone_transformation, parents):
     B, K = local_bone_transformation.shape[:2]
     local_bone_transformation = F.normalize(local_bone_transformation, dim=-2).double()
+    # local_bone_transformation = F.normalize(local_bone_transformation, dim=-2).float()
 
     Rs = [local_bone_transformation[:, 0]]
     for i in range(1, len(parents)):
-        Rs.append(torch.bmm(Rs[parents[i]], local_bone_transformation[:, i]))
+        try:
+            Rs.append(torch.bmm(Rs[parents[i]], local_bone_transformation[:, i]))
+        except:
+            import ipdb; ipdb.set_trace()
 
     return torch.stack(Rs, dim=1).float()
 
@@ -189,25 +193,38 @@ def get_joint_label_merged(lbs_weights):
     return torch.argmax(lbs_weights, dim=1)
      
 
-def SMPLX_layer(body_model, betas, translation, motion_pose, rep="6d"):
-    bz = body_model.batch_size
+def SMPLX_layer(body_model_list, betas, translation, motion_pose, rep="6d"):
+    
+    # bz = body_model_list[0].batch_size
+    bz = 1
 
-    if rep == "rotmat":
-        motion_pose_aa = rotation_matrix_to_angle_axis(motion_pose.reshape(-1, 3, 3)).reshape(bz, -1)
-    else:
-        motion_pose = motion_pose.squeeze().reshape(bz, -1)
-        motion_pose_aa = motion_pose
+    mesh_j_pose_list, mesh_rec_list = [], []
 
-    zero_center = torch.zeros_like(translation.reshape(-1, 3).cuda())
-    body_param_rec = {}
-    body_param_rec["transl"] = zero_center
-    body_param_rec["global_orient"] = motion_pose_aa[:, :3].cuda()
-    body_param_rec["body_pose"] = torch.cat([motion_pose_aa[:, 3:66].cuda(), torch.zeros(bz, 6).cuda()], dim=1)
-    body_param_rec["betas"] = betas.reshape(bz, -1)[:, :10].cuda()
+    for _k_, body_model in enumerate(body_model_list):
 
-    body_mesh = body_model(return_verts=True, **body_param_rec)
-    mesh_rec = body_mesh.vertices
-    mesh_j_pose = body_mesh.joints
+        if rep == "rotmat":
+            motion_pose_aa = rotation_matrix_to_angle_axis(motion_pose[_k_].reshape(-1, 3, 3)).reshape(bz, -1)
+        else:
+            motion_pose = motion_pose[_k_].squeeze().reshape(bz, -1)
+            motion_pose_aa = motion_pose
+
+        zero_center = torch.zeros_like(translation[_k_].reshape(-1, 3).cuda())
+        body_param_rec = {}
+        body_param_rec["transl"] = zero_center
+        body_param_rec["global_orient"] = motion_pose_aa[:, :3].cuda()
+        body_param_rec["body_pose"] = torch.cat([motion_pose_aa[:, 3:66].cuda(), torch.zeros(bz, 6).cuda()], dim=1)
+        body_param_rec["betas"] = betas[_k_].reshape(bz, -1)[:, :10].cuda()
+
+
+
+        body_mesh = body_model(return_verts=True, **body_param_rec)
+        
+        mesh_rec_list.append(body_mesh.vertices)
+        mesh_j_pose_list.append(body_mesh.joints)
+
+    mesh_rec = torch.vstack(mesh_rec_list)
+    mesh_j_pose = torch.vstack(mesh_j_pose_list)
+
     return mesh_j_pose, mesh_rec
 
 
@@ -224,7 +241,8 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
         pc_data = batch_data["point_cloud"].to(args.device).float()
         pc_data_idx = batch_data["closest_idx"].to(args.device)
         global_root = batch_data["global_orient"].to(args.device)
-        gender = batch_data["gender"][0]
+
+        bm_list = [bm_dict[g] for g in batch_data["gender"]]
  
         # discard te 0 entries 
         pc_data_list = [elem[elem.sum(-1) != 0] for elem in pc_data]
@@ -237,9 +255,17 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
         motion_pose_aa = torch.cat([global_root, motion_pose_aa], dim=1).reshape(-1, 3)
             
         motion_pose_rotmat = batch_rodrigues(motion_pose_aa).reshape(B, -1, 3, 3)
+
+        # print(batch_data['index'])
+        # if 2058 in batch_data['index']:
+        #     continue
+        # motion_pose_rotmat = motion_pose_rotmat.cpu()
+
         motion_pose_rotmat_global = local_to_global_bone_transformation(motion_pose_rotmat, parents)
  
-        gt_joints_pos, gt_vertices = SMPLX_layer(bodymodel_dict[gender], betas, motion_trans, motion_pose_rotmat, rep="rotmat")
+        motion_pose_rotmat_global = motion_pose_rotmat_global.to(args.device)
+
+        gt_joints_pos, gt_vertices = SMPLX_layer(bm_list, betas, motion_trans, motion_pose_rotmat, rep="rotmat")
 
         # pcl_data = get_pointcloud(pc_data_list)
     
@@ -268,7 +294,7 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
 
         angle_loss = norm_loss(pred_pose[:, :len(parents)], motion_pose_rotmat_global[:, :len(parents)], loss_type="l2")
  
-        pred_joints_pos, pred_vertices = SMPLX_layer(bodymodel_dict[gender], pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
+        pred_joints_pos, pred_vertices = SMPLX_layer(bm_list, pred_shape, motion_trans, pred_joint_pose, rep="rotmat")
 
         pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
         gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
@@ -296,12 +322,12 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
 
         losses["angle_recon"] = angle_loss * args.angle_w
         losses["beta"] = F.mse_loss(pred_shape, betas.reshape(B, -1)[:, :10])
-        losses["joints_pos"] = (F.mse_loss(gt_joints_pos.reshape(-1, 45, 3), pred_joints_pos.reshape(-1, 45, 3)) * args.jpos_w)
         losses["vertices"] = F.mse_loss(gt_vertices, pred_vertices) * args.vertex_w
         losses["normal"] = surface_normal_loss(pred_vertices, gt_vertices).mean() * args.normal_w
-        losses["marker"] = F.mse_loss(pred_vertices[:, markers_idx, :], gt_vertices[:, markers_idx, :]) * args.vertex_w * 2
-
         losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
+        losses["marker"] = F.mse_loss(pred_vertices[:, markers_idx, :], gt_vertices[:, markers_idx, :]) * args.vertex_w * 2
+        losses["joints_pos"] = (F.mse_loss(gt_joints_pos.reshape(-1, 45, 3), pred_joints_pos.reshape(-1, 45, 3)) * args.jpos_w)
+        
         losses["seg_loss"] = (point_cls_loss(pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
                                 label_data.reshape(-1), trans_feat) * args.part_w)
 
@@ -372,9 +398,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     args.device = torch.device("cuda" if args.cuda else "cpu")
 
-    exps_folder = "gt_flag_{}_aug_flag_{}_num_point_{}".format(args.gt_flag,
-                                                                args.aug_flag,
-                                                                args.num_point)
+    exps_folder = "GT_{}_AUG_{}_num_point_{}".format(args.gt_flag,
+                                                    args.aug_flag,
+                                                    args.num_point)
    
     output_folder = os.path.sep.join(["./experiments", exps_folder])
 
@@ -419,6 +445,7 @@ if __name__ == "__main__":
  
     train_loader = DataLoader(train_dataset, 
                               batch_size=args.batch_size, 
+                            #   shuffle=False, 
                               shuffle=True, 
                               pin_memory=True, 
                               drop_last=True)
