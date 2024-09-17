@@ -438,8 +438,12 @@ if __name__ == "__main__":
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    train_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', train_flag=True, gt_flag=args.gt_flag, aug_flag=args.aug_flag)
+    test_dataset = DFaustDataset(data_path='outdir/DFaust', train_flag=False, gt_flag=args.gt_flag, aug_flag=False, 
+                                  garment_flag=True)
+    train_dataset = DFaustDataset(data_path='outdir/DFaust', train_flag=True, gt_flag=args.gt_flag, aug_flag=args.aug_flag, 
+                                  garment_flag=True)
  
+
     surface_normal_loss = NormalVectorLoss(face=bm_dict["neutral"].faces.astype(int))
     point_cls_loss = get_part_seg_loss()
  

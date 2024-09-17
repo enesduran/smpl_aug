@@ -16,38 +16,50 @@ class DFaustDataset(torch.utils.data.Dataset):
         self.setting_name = setting_name
         self.max_point_num = 150000
 
-        test_subject = '50027'
+        self.test_subject = '50027'
 
         self.train_flag = 'train' if train_flag else 'test'
         self.garment = 'clothed' if garment_flag else 'minimal'
 
-        self.dataloader_path = f'data/GARMENT_{garment_flag}.npz'
+        self.dataloader_path = f'data/{self.train_flag}_{self.garment}.npz'
 
         if not os.path.exists(self.dataloader_path):
             print(f"No processed data, processing data: {self.train_flag}")
-            self.data_dict = self.process_data()
-            self.save_data()
+            superset_data = self.process_data()
+            self.save_data(superset_data)
         else:
             print(f"Loading already processed data: {self.train_flag}")
-            self.data_dict = self.load_data()
+            superset_data = self.load_data()
         
+        self.discard_data(superset_data)
         
-
+    
     def process_data(self):
+        """
+        This method takes all the data from the DFaust dataset and processes it into a dictionary. For each 
+        sequence point clouds from both the ground truth and the kinect noisy point clouds are loaded. 
+        Discarding samples through aug_flag and gt_flag to be performed in load data method.
+        """
 
-        pc_folder_name = 'point_cloud_gt' if self.gt_flag else 'point_cloud_noised'
 
-        pose_data_list = sorted(glob.glob(f'../{self.data_path}/*/*/{self.setting_name}/body_data/*.npy'))
-        pc_data_list = sorted(glob.glob(f'../{self.data_path}/*/*/{self.setting_name}/{pc_folder_name}/*.ply'))
-       
-        import ipdb; ipdb.set_trace()
+        pose_data_list = sorted(glob.glob(f'../{self.data_path}_{self.garment}/DFaust_67/*/*/{self.setting_name}/body_data/*.npy'))
+        pc_gt_data_list = sorted(glob.glob(f'../{self.data_path}_{self.garment}/DFaust_67/*/*/{self.setting_name}/point_cloud_gt/*.ply'))
+        pc_noised_data_list = sorted(glob.glob(f'../{self.data_path}_{self.garment}/DFaust_67/*/*/{self.setting_name}/point_cloud_noised/*.ply'))
 
-        assert len(pose_data_list) == len(pc_data_list), "Number of pose data and point cloud data should be the same"
+        
+        if self.train_flag == 'train':
+            pose_data_list = [elem for elem in pose_data_list if self.test_subject not in elem]
+            pc_gt_data_list = [elem for elem in pc_gt_data_list if self.test_subject not in elem]
+            pc_noised_data_list = [elem for elem in pc_noised_data_list if self.test_subject not in elem]
+        else:
+            pose_data_list = [elem for elem in pose_data_list if self.test_subject in elem]
+            pc_gt_data_list = [elem for elem in pc_gt_data_list if self.test_subject in elem]
+            pc_noised_data_list = [elem for elem in pc_noised_data_list if self.test_subject in elem]
 
-        if not self.aug_flag:   
-            pose_data_list = [elem for elem in pose_data_list if 'aug' not in elem]
-            pc_data_list = [elem for elem in pc_data_list if 'aug' not in elem]
- 
+    
+        assert len(pose_data_list) == len(pc_gt_data_list), "Number of pose data and point cloud data should be the same"
+        assert len(pose_data_list) == len(pc_noised_data_list), "Number of pose data and point cloud data should be the same"
+
         data_dict = dict()
 
         print("Processing data")
@@ -57,13 +69,14 @@ class DFaustDataset(torch.utils.data.Dataset):
             data_dict_i = dict()
 
             seq_smpl_params = np.load(pose_data_list[_i_], allow_pickle=True).item()
-            ptc = trimesh.load(pc_data_list[_i_])
+
+            ptc_gt = trimesh.load(pc_gt_data_list[_i_])
+            ptc_noisy = trimesh.load(pc_noised_data_list[_i_])
 
             # meta variables 
             data_dict_i['sequence_name'] = seq_smpl_params['seq_name']
             data_dict_i['aug_flag'] = seq_smpl_params['aug_flag']
             data_dict_i['timestep'] = seq_smpl_params['timestep']
-            data_dict_i['gt_flag'] = self.gt_flag
             data_dict_i['gender'] = seq_smpl_params['gender']
 
             # learning-related variables
@@ -72,34 +85,39 @@ class DFaustDataset(torch.utils.data.Dataset):
             data_dict_i['global_orient'] = seq_smpl_params['global_orient'][0]
             data_dict_i['pose'] = seq_smpl_params['body_pose'][0]
 
-            data_dict_i['closest_idx'] = seq_smpl_params['idx_pcd'].cpu() if self.gt_flag else seq_smpl_params['idx_pcd_noise'].cpu()
-  
             # make sure the number of points is the same, if not, pad with zeros
-            data_dict_i['point_cloud'] = np.concatenate([ptc.vertices, np.zeros((self.max_point_num - ptc.vertices.shape[0], 3))], axis=0)
+            data_dict_i['point_cloud_gt'] = np.concatenate([ptc_gt.vertices, np.zeros((self.max_point_num - ptc_gt.vertices.shape[0], 3))], axis=0)
+            data_dict_i['point_cloud_noisy'] = np.concatenate([ptc_noisy.vertices, np.zeros((self.max_point_num - ptc_noisy.vertices.shape[0], 3))], axis=0)
             data_dict_i['index'] = _i_
        
             data_dict[str(_i_)] = data_dict_i
 
 
         return data_dict
-    
 
-    # given two flags, load the corresponding data
+    def discard_data(self, superset_data):
+        """
+        This method first loads the superset data. Then given 
+        two flags, load the corresponding data.
+        """
+        self.data_dict = dict()
+
+        pc_key = 'point_cloud_gt' if self.gt_flag else 'point_cloud_noisy'
+        other_pc_key = 'point_cloud_noisy' if self.gt_flag else 'point_cloud_gt'
+ 
+        for k, v in superset_data.items():
+
+            if (self.aug_flag or (v['aug_flag'] == self.aug_flag)):
+                self.data_dict[k] = v
+                self.data_dict[k].pop(other_pc_key)
+                self.data_dict[k]['point_cloud'] = self.data_dict[k].pop(pc_key)
+
+            
     def load_data(self):
         return np.load(self.dataloader_path, allow_pickle=True)["arr_0"].item()
-
-    # save the data to the corresponding files
-    def save_data(self):
-                
-        sub_data_dict = dict()
-
-        for key, value in self.data_dict.items():
-            if (value['gt_flag'] == self.gt_flag) and (self.aug_flag or (value['aug_flag'] == self.aug_flag)):
-                sub_data_dict[key] = value
-
-        assert len(sub_data_dict) == len(self.data_dict), "Data is not processed correctly"
-
-        np.savez(self.dataloader_path, self.data_dict)     
+    
+    def save_data(self, superset_data):
+        np.savez(self.dataloader_path, superset_data)     
 
 
     def __len__(self):
@@ -112,8 +130,8 @@ class DFaustDataset(torch.utils.data.Dataset):
         if index in [2390, 2863, 506, 2383, 1731, 3037, 3648, 1237, 1129, 1809, 3211, 3504, 3452,
                      2465]:
             index = 0 
-        if index > 2465:
-            index = 0
+        # if index > 2465:
+        #     index = 0
 
         return self.data_dict[str(index)]
     
