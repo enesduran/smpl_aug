@@ -21,7 +21,12 @@ def demo():
             continue
         else:
             wrapper_obj.load_data(motion_path)
-            outdir = os.path.join("outdir", "/".join(motion_path.strip('.npz').split('/')[1:]))
+            split_list = motion_path.strip('.npz').split('/')
+            
+            outdir = os.path.join("outdir", f"{split_list[1]}_{args.clothing_option}", "/".join(split_list[2:]))
+            
+            import ipdb; ipdb.set_trace()
+
             wrapper_obj.augment_loop(outdir=outdir, augment_pose_flag=args.augment_pose_flag, render_flag=args.render_flag)
 
 

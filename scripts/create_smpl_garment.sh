@@ -3,4 +3,4 @@ python core/demo.py \
     --body-model-type smpl \
     --motion-path motion_data/sample_motion_data_smpl.npz \
     --camera-config camera_configs/kinect.json \
-    --clothing-option garment  
+    --clothing-option clothed  

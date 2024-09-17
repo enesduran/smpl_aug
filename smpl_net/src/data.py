@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 
 class DFaustDataset(torch.utils.data.Dataset):
-    def __init__(self, data_path, train_flag, setting_name='kinect', gt_flag=False, aug_flag=False):
+    def __init__(self, data_path, train_flag, setting_name='kinect', gt_flag=False, aug_flag=False, garment_flag=False):
  
         self.gt_flag = gt_flag
         self.aug_flag = aug_flag
@@ -16,10 +16,12 @@ class DFaustDataset(torch.utils.data.Dataset):
         self.setting_name = setting_name
         self.max_point_num = 150000
 
+        test_subject = '50027'
 
         self.train_flag = 'train' if train_flag else 'test'
-        self.dataloader_path = f'data/{self.train_flag}_GT_{gt_flag}_AUG_{aug_flag}.npz'
+        self.garment = 'clothed' if garment_flag else 'minimal'
 
+        self.dataloader_path = f'data/GARMENT_{garment_flag}.npz'
 
         if not os.path.exists(self.dataloader_path):
             print(f"No processed data, processing data: {self.train_flag}")
@@ -38,6 +40,7 @@ class DFaustDataset(torch.utils.data.Dataset):
         pose_data_list = sorted(glob.glob(f'../{self.data_path}/*/*/{self.setting_name}/body_data/*.npy'))
         pc_data_list = sorted(glob.glob(f'../{self.data_path}/*/*/{self.setting_name}/{pc_folder_name}/*.ply'))
        
+        import ipdb; ipdb.set_trace()
 
         assert len(pose_data_list) == len(pc_data_list), "Number of pose data and point cloud data should be the same"
 
