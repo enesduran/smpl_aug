@@ -14,7 +14,7 @@ class DFaustDataset(torch.utils.data.Dataset):
         self.aug_flag = aug_flag
         self.data_path = data_path
         self.setting_name = setting_name
-        self.max_point_num = 150000
+        self.max_point_num = 37500
 
         self.test_subject = '50027'
 
@@ -85,9 +85,22 @@ class DFaustDataset(torch.utils.data.Dataset):
             data_dict_i['global_orient'] = seq_smpl_params['global_orient'][0]
             data_dict_i['pose'] = seq_smpl_params['body_pose'][0]
 
-            # make sure the number of points is the same, if not, pad with zeros
-            data_dict_i['point_cloud_gt'] = np.concatenate([ptc_gt.vertices, np.zeros((self.max_point_num - ptc_gt.vertices.shape[0], 3))], axis=0)
-            data_dict_i['point_cloud_noisy'] = np.concatenate([ptc_noisy.vertices, np.zeros((self.max_point_num - ptc_noisy.vertices.shape[0], 3))], axis=0)
+            # make sure the number of points is the same, if less pad, if more sample
+            if ptc_gt.vertices.shape[0] > self.max_point_num:
+                idx = np.random.choice(ptc_gt.vertices.shape[0], size=self.max_point_num, replace=False)
+                ptc_gt = ptc_gt.vertices[idx]
+            else:
+                ptc_gt = np.concatenate([ptc_gt.vertices, np.zeros((self.max_point_num - ptc_gt.vertices.shape[0], 3))], axis=0)
+            
+            if ptc_noisy.vertices.shape[0] > self.max_point_num:
+                idx = np.random.choice(ptc_noisy.vertices.shape[0], size=self.max_point_num, replace=False)
+                ptc_noisy = ptc_noisy[idx]
+            else:
+                ptc_noisy = np.concatenate([ptc_noisy.vertices, np.zeros((self.max_point_num - ptc_noisy.vertices.shape[0], 3))], axis=0)
+
+
+            data_dict_i['point_cloud_gt'] = ptc_gt
+            data_dict_i['point_cloud_noisy'] = ptc_noisy
             data_dict_i['index'] = _i_
        
             data_dict[str(_i_)] = data_dict_i

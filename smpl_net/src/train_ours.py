@@ -239,14 +239,14 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
         motion_trans = batch_data["trans"].to(args.device)
         betas = batch_data["betas"][:, None, :].to(args.device)
         pc_data = batch_data["point_cloud"].to(args.device).float()
-        pc_data_idx = batch_data["closest_idx"].to(args.device)
+        # pc_data_idx = batch_data["closest_idx"].to(args.device)
         global_root = batch_data["global_orient"].to(args.device)
 
         bm_list = [bm_dict[g] for g in batch_data["gender"]]
  
         # discard te 0 entries 
         pc_data_list = [elem[elem.sum(-1) != 0] for elem in pc_data]
-        pc_data_list_idx = [elem[pc_data_idx[_i_]] for _i_, elem in enumerate(pc_data_list)]
+        # pc_data_list_idx = [elem[pc_data_idx[_i_]] for _i_, elem in enumerate(pc_data_list)]
         
     
         B, _ = motion_trans.size()
