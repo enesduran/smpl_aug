@@ -53,14 +53,13 @@ class PointCloud_network_equiv(nn.Module):
         self.shape_encoder = StackedMHSA(embedding_dim=EPN_feat_dim2, value_dim=6, num_heads=8, num_layers=2)
         self.pose_encoder = StackedMHSA(embedding_dim=EPN_feat_dim2, value_dim=128, num_heads=8, num_layers=2)
         self.part_encoder = ResnetPointnet(out_dim=self.part_num, hidden_dim=128, dim=EPN_feat_dim)
-        self.shape_predictor = BatchMLP(in_features=22 * 6, out_features=10)
+        self.shape_predictor = BatchMLP(in_features=self.part_num * 6, out_features=10)
         self.pose_predictor = BatchMLP(in_features=128, out_features=128)
         self.so3_reg = nn.Conv1d(128, 1, 1)
-
+ 
         # self.shape_encoder = StackedMHSA(embedding_dim=EPN_feat_dim2, value_dim=6, num_heads=8, num_layers=2)
         # self.pose_encoder = StackedMHSA(embedding_dim=EPN_feat_dim2, value_dim=(self.part_num-1) * 6, num_heads=8, num_layers=2)
         # self.part_encoder = ResnetPointnet(out_dim=self.part_num, hidden_dim=(self.part_num-1) * 6, dim=EPN_feat_dim)
-        # self.shape_predictor = BatchMLP(in_features=self.part_num * 6, out_features=10)
         # self.pose_predictor = BatchMLP(in_features=(self.part_num+1) * 6, out_features=(self.part_num-1) * 6)
         # self.so3_reg = nn.Conv1d((self.part_num-1) * 6, 1, 1)
 

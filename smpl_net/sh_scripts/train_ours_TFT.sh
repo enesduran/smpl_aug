@@ -3,10 +3,10 @@ python src/train_ours.py \
         --EPN_layer_num 2 \
         --aug_type no \
         --batch_size 2 \
-        --epochs 400 \
+        --epochs 20 \
         --gt_part_seg auto \
-        --gt-flag true \
+        --garment-flag true \
+        --gt-flag false \
         --aug-flag true \
         --kinematic_cond yes \
         --num_point 50000
-# 50000 if H100

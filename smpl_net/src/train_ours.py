@@ -350,7 +350,6 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
 
         batch_correct = correct.item() / (args.batch_size * args.num_point)
 
-        # print(batch_data['index'])
         pbar.set_description(f"Batch part acc: {batch_correct:.03f} Training Loss: {all_loss.item():.02f}")
         
     return all_loss

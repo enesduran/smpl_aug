@@ -151,12 +151,9 @@ class DFaustDataset(torch.utils.data.Dataset):
         #              2465]:
         #     index = 0 
 
-        if self.train_flag == 'train' and index in [1991, 1989, 3725, 1257, 1261, 389, 3741, 3395, 2731, 303, 1263, 3531]:
-            index = 0
-
-        # if self.train_flag == 'test' and index in [2390, 2863, 506, 2383, 1731, 3037, 3648, 1237, 1129, 1809, 3211, 3504, 3452,
-        #              2465]:
+        # if self.train_flag == 'train' and index in [1991, 1989, 3725, 1257, 1261, 389, 3741, 3395, 2731, 303, 1263, 3531]:
         #     index = 0
+ 
 
         return self.data_dict[str(index)]
     
