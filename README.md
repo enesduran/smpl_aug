@@ -71,9 +71,15 @@ The outputs will be saved under `outdir/`
 
 TODO (with importance order)
 
-- [ ] Train 3D-Coded with augmentation and vanilla 
+- [ ] Train ArtEq 
+        a) W/o augmentation, gt rendering 
+        a) W/o augmentation, Kinect rendering 
+        a) W augmentation, gt rendering 
+        a) W augmentation, Kinect rendering
+
 - [ ]  Contemplate about possible use cases (no empirical demonstration): 
         a) Providing 3D scene or already rendered depth image of the scene as an optional argument render object and humans on top of it. 
         b) Given a dataset of human motion and RGB images, simulate Kinect depth and point cloud.  
+        
 - [ ]  Write the report 
 - [ ]  Presentation 
