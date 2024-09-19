@@ -199,7 +199,6 @@ def get_joint_label_merged(lbs_weights):
 
 def SMPLX_layer(body_model_list, betas, translation, motion_pose, rep="6d"):
     
-    # bz = body_model_list[0].batch_size
     bz = 1
 
     mesh_j_pose_list, mesh_rec_list = [], []
@@ -394,14 +393,14 @@ if __name__ == "__main__":
                                                                 args.num_point)
    
     output_folder = os.path.sep.join(["./experiments", exps_folder])
-
-
+ 
     body_model_neutral = get_body_model(model_type="smpl", gender="neutral", 
-                                        batch_size=args.batch_size, device="cuda")
+                                        batch_size=1, device="cuda")
     body_model_female = get_body_model(model_type="smpl", gender="female",
-                                        batch_size=args.batch_size, device="cuda")
+                                        batch_size=1, device="cuda")
     body_model_male = get_body_model(model_type="smpl", gender="male", 
-                                     batch_size=args.batch_size, device="cuda")
+                                     batch_size=1, device="cuda")
+ 
 
     bm_dict = {"neutral": body_model_neutral, 
                "female": body_model_female,
