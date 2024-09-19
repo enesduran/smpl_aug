@@ -2,10 +2,11 @@ python src/train_ours.py \
         --EPN_input_radius 0.4 \
         --EPN_layer_num 2 \
         --aug_type no \
-        --batch_size 1 \
-        --epochs 100 \
+        --batch_size 2 \
+        --epochs 20 \
         --gt_part_seg auto \
+        --garment-flag true \
         --gt-flag true \
-        --aug-flag false \
+        --aug-flag true \
         --kinematic_cond yes \
         --num_point 50000

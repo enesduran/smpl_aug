@@ -10,6 +10,7 @@ import tqdm.auto as tqdm
 import webdataset as wds
 from data import DFaustDataset
 from torch.utils.data import DataLoader
+from pytorch3d.ops.knn import knn_points 
 
 from geometry import get_body_model
 from models_pointcloud import PointCloud_network_equiv
@@ -22,6 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", type=int, default=15, metavar="N", help="which model epoch to use (default: 15)")
     parser.add_argument("--rep_type", type=str, default="6d", metavar="N", help="aa, 6d")
     parser.add_argument("--part_num", type=int, default=22, metavar="N", help="part num of the SMPL body")
+    parser.add_argument("--garment-flag", type=bool)
     parser.add_argument("--gt-flag", type=bool)
     parser.add_argument("--aug-flag", type=bool)
     parser.add_argument("--num_point", type=int, default=5000, metavar="N", help="point num sampled from mesh surface")
@@ -39,11 +41,11 @@ if __name__ == "__main__":
 
     args.device = torch.device("cuda")
 
-    exps_folder = "GT_{}_AUG_{}_num_point_{}".format(args.gt_flag,
-                                                    args.aug_flag,
-                                                    args.num_point)
+    exps_folder = "GARMENT_{}_GT_{}_AUG_{}_num_point_{}".format(args.garment_flag,
+                                                                args.gt_flag,
+                                                                args.aug_flag,
+                                                                args.num_point)
 
-     
     output_folder = os.path.sep.join(["./experiments", exps_folder])
 
     if args.paper_model:
@@ -71,18 +73,19 @@ if __name__ == "__main__":
     base_path = Path(output_folder)
     torch.manual_seed(1)
 
-    test_dataset = DFaustDataset(data_path='outdir/DFaust/DFaust_67', 
-                                 train_flag=True, 
+    test_dataset = DFaustDataset(data_path='outdir/DFaust', 
+                                 train_flag=False, 
                                  gt_flag=args.gt_flag, 
-                                 aug_flag=False)
-    
+                                 aug_flag=False, 
+                                 garment_flag=args.garment_flag)
+  
     test_loader = DataLoader(test_dataset, 
                               batch_size=args.batch_size, 
                               shuffle=True, 
                               pin_memory=True, 
                               drop_last=True)
 
-
+ 
     model_path = base_path / f"model_epochs_{args.epoch-1:08d}.pth"
     os.makedirs(os.path.join(os.path.dirname(model_path), 'results'), exist_ok=True)
 
@@ -97,12 +100,32 @@ if __name__ == "__main__":
     with torch.inference_mode():
 
         for i, batch_data in enumerate(tqdm.tqdm(test_loader)):
+
+            assert len(batch_data['gender']) == 1
+            bm_list = [bm_dict[g] for g in batch_data["gender"]]
  
             pcl_data = batch_data["point_cloud"][:].cuda().float()
             pcl_data = pcl_data[pcl_data.sum(-1) != 0][None]
 
-            rand_idx = np.random.choice(pcl_data.shape[1], args.num_point, replace=False)
-            pcl_data = batch_data["point_cloud"][:, rand_idx].float().cuda()
+
+            body_pose_gt = batch_data["pose"].cuda()
+            body_pose_gt[:, -6:] = 0
+
+
+            joints_gt, vertices_gt = SMPLX_layer(bm_list,
+                                                batch_data["betas"].cuda(),
+                                                batch_data["trans"].cuda(),
+                                                torch.cat([batch_data["global_orient"].cuda(), body_pose_gt], dim=1),
+                                                rep="aa")
+            
+            pc_data_list_idx = []
+
+            # compute closest points
+            for _i_, elem in enumerate(pcl_data):
+                clo_pts = knn_points(vertices_gt[_i_][None], pcl_data[_i_][None], K=1, return_nn=True)[1][0, :, 0]
+                pc_data_list_idx.append(pcl_data[_i_][clo_pts])
+  
+            pcl_data = torch.stack(pc_data_list_idx)
 
             pred_joint, pred_pose, pred_shape, trans_feat = \
                 model(pcl_data, None, None, None, is_optimal_trans=False, parents=parents)
@@ -111,35 +134,19 @@ if __name__ == "__main__":
 
             pred_joint_pose = kinematic_layer_SO3_v2(pred_pose, parents)
 
-            trans_feat = torch.zeros((1, 3)).cuda()
-
-            assert len(batch_data['gender']) == 1
-
-            bm_list = [bm_dict[g] for g in batch_data["gender"]]
-
-
+            
             pred_joints_pos, pred_vertices = SMPLX_layer(bm_list,
                                                         pred_shape,
-                                                        trans_feat,
-                                                        pred_joint_pose,
+                                                        translation=torch.zeros((1, 3)).cuda(),
+                                                        motion_pose=pred_joint_pose,
                                                         rep="rotmat")
-
+            
+             
             pred_joints_pos = pred_joints_pos[0]
             pred_vertices = pred_vertices[0]
-
-            betas = batch_data["betas"].cuda()
-            transl = batch_data["trans"].cuda()
-            global_orient = batch_data["global_orient"].cuda()
-
-            body_pose = batch_data["pose"].cuda()
-            body_pose[:, -6:] = 0
-
-
-            joints_gt, vertices_gt = SMPLX_layer(bm_list,
-                                                betas,
-                                                transl,
-                                                torch.cat([global_orient, body_pose], dim=1),
-                                                rep="aa")
+ 
+  
+            
             vertices_gt = vertices_gt[0]
             joints_gt = joints_gt[0]
             

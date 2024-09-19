@@ -5,8 +5,9 @@ python src/eval_ours.py \
     --epoch 11 \
     --batch_size 1 \
     --gt_part_seg auto \
+    --garment-flag true \
     --gt-flag true \
-    --aug-flag false \
+    --aug-flag true \
     --kinematic_cond yes \
     --num_point 50000
 

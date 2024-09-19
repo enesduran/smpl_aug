@@ -52,9 +52,17 @@ class DFaustDataset(torch.utils.data.Dataset):
             pc_gt_data_list = [elem for elem in pc_gt_data_list if self.test_subject not in elem]
             pc_noised_data_list = [elem for elem in pc_noised_data_list if self.test_subject not in elem]
         else:
+
+            # first select the test subject
             pose_data_list = [elem for elem in pose_data_list if self.test_subject in elem]
             pc_gt_data_list = [elem for elem in pc_gt_data_list if self.test_subject in elem]
             pc_noised_data_list = [elem for elem in pc_noised_data_list if self.test_subject in elem]
+
+            # then discard the augmented poses
+            pose_data_list = [elem for elem in pose_data_list if 'aug' not in elem]
+            pc_gt_data_list = [elem for elem in pc_gt_data_list if 'aug' not in elem]
+            pc_noised_data_list = [elem for elem in pc_noised_data_list if 'aug' not in elem]
+            
 
     
         assert len(pose_data_list) == len(pc_gt_data_list), "Number of pose data and point cloud data should be the same"
@@ -139,11 +147,15 @@ class DFaustDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
 
-        # TF
-        if index in [2390, 2863, 506, 2383, 1731, 3037, 3648, 1237, 1129, 1809, 3211, 3504, 3452,
-                     2465]:
-            index = 0 
-        # if index > 2465:
+        # if index in [2390, 2863, 506, 2383, 1731, 3037, 3648, 1237, 1129, 1809, 3211, 3504, 3452,
+        #              2465]:
+        #     index = 0 
+
+        if self.train_flag == 'train' and index in [1991, 1989, 3725, 1257, 1261, 389, 3741, 3395, 2731, 303, 1263, 3531]:
+            index = 0
+
+        # if self.train_flag == 'test' and index in [2390, 2863, 506, 2383, 1731, 3037, 3648, 1237, 1129, 1809, 3211, 3504, 3452,
+        #              2465]:
         #     index = 0
 
         return self.data_dict[str(index)]

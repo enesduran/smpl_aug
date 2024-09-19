@@ -9,6 +9,7 @@ from torch import optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch_scatter import scatter_mean
+from pytorch3d.ops.knn import knn_points 
 
 from data import DFaustDataset
 from backbones import get_part_seg_loss
@@ -141,7 +142,10 @@ def get_pointcloud_(vertices_list, n_points_surface, gender_list):
     for _j_, vertices in enumerate(vertices_list):
 
         n_points_surface = vertices.shape[0]
-
+        # n_points_surface = 5000
+        if n_points_surface != 6890:
+            import ipdb; ipdb.set_trace()
+ 
         points_surface, points_surface_lbs = sample_points(vertices=vertices.cpu().numpy()[None], 
                                                         faces=body_model_faces, 
                                                             count=n_points_surface,
@@ -239,36 +243,35 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
         motion_trans = batch_data["trans"].to(args.device)
         betas = batch_data["betas"][:, None, :].to(args.device)
         pc_data = batch_data["point_cloud"].to(args.device).float()
-        # pc_data_idx = batch_data["closest_idx"].to(args.device)
+      
         global_root = batch_data["global_orient"].to(args.device)
 
         bm_list = [bm_dict[g] for g in batch_data["gender"]]
- 
-        # discard te 0 entries 
-        pc_data_list = [elem[elem.sum(-1) != 0] for elem in pc_data]
-        # pc_data_list_idx = [elem[pc_data_idx[_i_]] for _i_, elem in enumerate(pc_data_list)]
-        
-    
+  
         B, _ = motion_trans.size()
   
         # concatenate with the global_orient
         motion_pose_aa = torch.cat([global_root, motion_pose_aa], dim=1).reshape(-1, 3)
-            
         motion_pose_rotmat = batch_rodrigues(motion_pose_aa).reshape(B, -1, 3, 3)
-
-        # print(batch_data['index'])
-        # if 2058 in batch_data['index']:
-        #     continue
-        # motion_pose_rotmat = motion_pose_rotmat.cpu()
-
         motion_pose_rotmat_global = local_to_global_bone_transformation(motion_pose_rotmat, parents)
- 
         motion_pose_rotmat_global = motion_pose_rotmat_global.to(args.device)
-
+        
         gt_joints_pos, gt_vertices = SMPLX_layer(bm_list, betas, motion_trans, motion_pose_rotmat, rep="rotmat")
 
-        # pcl_data = get_pointcloud(pc_data_list)
-    
+        # discard te 0 entries 
+        pc_data_list = [elem[elem.sum(-1) != 0] for elem in pc_data]
+        pc_data_list_idx = []
+        
+        # compute closest points
+        for _i_, elem in enumerate(pc_data_list):
+            
+            clo_pts = knn_points(gt_vertices[_i_][None], pc_data_list[_i_][None], K=1, return_nn=True)[1][0, :, 0]
+            pc_data_list_idx.append(pc_data_list[_i_][clo_pts])
+
+            # trimesh.Trimesh(vertices=gt_vertices[0].cpu(), faces=bodymodel_dict[batch_data["gender"][_i_]].faces).export(os.path.join(f'rezz/body_gt_{_i_:04d}.obj'))
+            # trimesh.PointCloud(pc_data_list[_i_][clo_pts].cpu().numpy()).export(os.path.join(f'rezz/pc_{_i_:04d}.ply'))
+            # import ipdb; ipdb.set_trace()
+ 
         pcl_data, label_data, pcl_lbs = get_pointcloud_(pc_data_list_idx, args.num_point, gender_list=batch_data["gender"])
 
         losses = {}
@@ -299,33 +302,20 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
         pred_pcl_part_mean = model.soft_aggr_norm(pcl_data.unsqueeze(3), pred_joint).squeeze()
         gt_pcl_part_mean = scatter_mean(pcl_data, label_data.cuda(), dim=1)
 
-        ##########################################
-        # from pytorch3d.ops.knn import knn_points 
-        # import trimesh
-
-        # for i__ in range(1):
-
-            
-        #     clo_pts = knn_points(gt_vertices[i__][None], pc_data_list[i__][None], K=1, return_nn=True)[1][0, :, 0]
-        #     clo_pts.cpu(), pc_data_idx[i__].cpu()
-
-        #     set(clo_pts.cpu().numpy()).difference(set(pc_data_idx[i__].cpu().numpy()))
-            
-
-        #     trimesh.Trimesh(vertices=gt_vertices[0].cpu(), faces=bodymodel_dict[gender].faces).export(os.path.join(f'rezz/body_gt_{i__:04d}.obj'))
-        #     trimesh.PointCloud(pc_data_list[i__][clo_pts].cpu().numpy()).export(os.path.join(f'rezz/pc_{i__:04d}.ply'))
-        #     trimesh.PointCloud(pc_data_list[i__][pc_data_idx[i__]].cpu().numpy()).export(os.path.join(f'rezz/_pc_{i__:04d}.ply'))
-        #     import ipdb; ipdb.set_trace()
-
-        ##########################################
-
+      
 
         losses["angle_recon"] = angle_loss * args.angle_w
         losses["beta"] = F.mse_loss(pred_shape, betas.reshape(B, -1)[:, :10])
         losses["vertices"] = F.mse_loss(gt_vertices, pred_vertices) * args.vertex_w
         losses["normal"] = surface_normal_loss(pred_vertices, gt_vertices).mean() * args.normal_w
-        losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
         losses["marker"] = F.mse_loss(pred_vertices[:, markers_idx, :], gt_vertices[:, markers_idx, :]) * args.vertex_w * 2
+
+        try: 
+            losses["pcl_part_mean"] = F.mse_loss(pred_pcl_part_mean, gt_pcl_part_mean) * args.vertex_w
+        except:
+            print(f"Issue with pcl part mean {batch_data['index']}")
+        
+        
         losses["joints_pos"] = (F.mse_loss(gt_joints_pos.reshape(-1, 45, 3), pred_joints_pos.reshape(-1, 45, 3)) * args.jpos_w)
         
         losses["seg_loss"] = (point_cls_loss(pred_joint.contiguous().view(-1, pred_joint.shape[-1]),
@@ -380,6 +370,7 @@ if __name__ == "__main__":
     parser.add_argument("--aug_type", type=str, default="so3", metavar="N", help="so3, zrot, no")
     parser.add_argument("--gt_part_seg", type=str, default="auto", metavar="N", help="")
     parser.add_argument("--gt-flag", type=bool)
+    parser.add_argument("--garment-flag", type=bool)
     parser.add_argument("--aug-flag", type=bool)
     parser.add_argument("--EPN_input_radius", type=float, default=0.4, help="train from pretrained model")
     parser.add_argument("--EPN_layer_num", type=int, default=2, metavar="N", help="point num sampled from mesh surface")
@@ -398,9 +389,10 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     args.device = torch.device("cuda" if args.cuda else "cpu")
 
-    exps_folder = "GT_{}_AUG_{}_num_point_{}".format(args.gt_flag,
-                                                    args.aug_flag,
-                                                    args.num_point)
+    exps_folder = "GARMENT_{}_GT_{}_AUG_{}_num_point_{}".format(args.garment_flag,
+                                                                args.gt_flag,
+                                                                args.aug_flag,
+                                                                args.num_point)
    
     output_folder = os.path.sep.join(["./experiments", exps_folder])
 
@@ -418,7 +410,8 @@ if __name__ == "__main__":
     
 
     body_model_faces = bm_dict["neutral"].faces.astype(int)
-    parents = bm_dict["neutral"].parents[:22]
+    # parents = bm_dict["neutral"].parents[:22]
+    parents = bm_dict["neutral"].parents
     gt_lbs_dict = {'neutral': bm_dict["neutral"].lbs_weights,
                    'male': bm_dict["male"].lbs_weights,
                    'female': bm_dict["female"].lbs_weights} 
@@ -438,10 +431,11 @@ if __name__ == "__main__":
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    test_dataset = DFaustDataset(data_path='outdir/DFaust', train_flag=False, gt_flag=args.gt_flag, aug_flag=False, 
-                                  garment_flag=True)
-    train_dataset = DFaustDataset(data_path='outdir/DFaust', train_flag=True, gt_flag=args.gt_flag, aug_flag=args.aug_flag, 
-                                  garment_flag=True)
+    train_dataset = DFaustDataset(data_path='outdir/DFaust', 
+                                  train_flag=True, 
+                                  gt_flag=args.gt_flag, 
+                                  aug_flag=args.aug_flag, 
+                                  garment_flag=args.garment_flag)
  
 
     surface_normal_loss = NormalVectorLoss(face=bm_dict["neutral"].faces.astype(int))
@@ -449,7 +443,6 @@ if __name__ == "__main__":
  
     train_loader = DataLoader(train_dataset, 
                               batch_size=args.batch_size, 
-                            #   shuffle=False, 
                               shuffle=True, 
                               pin_memory=True, 
                               drop_last=True)
