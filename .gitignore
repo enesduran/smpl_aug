@@ -1,7 +1,10 @@
 outdir
-smpl_net/data
-smpl_net/experiments
 core/sculpt/data
+smpl_net/data
+smpl_net/sub_files
+smpl_net/cluster_logs
+smpl_net/experiments_test
+smpl_net/experiments_train
 
 *.obj
 *.pkl
