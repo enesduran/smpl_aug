@@ -50,8 +50,8 @@ import stat
 import time
 import joblib
 import shutil
-import tabulate
 import subprocess
+from tabulate import tabulate
 
 TRAIN_FILENAME = 'sh_scripts/train_ours_GARMENTFLAGGTFLAGAUGFLAG.sh'
 EVAL_FILENAME = 'sh_scripts/eval_ours_GARMENTFLAGGTFLAGAUGFLAG_TESTNOISEFLAG.sh'
@@ -146,19 +146,27 @@ def spawn_test():
 
 def make_table():
 
-    table = [['setting', 'j2j', 'v2v']]
+    metric_names = ['setting', 'j2j (cm)', 'v2v (cm)']
+    table = []
 
     for garment_flag in [True, False]:
-        for train_gt_noise_flag in [True, False]:
-            for train_pose_aug_flag in [True, False]: 
-                for test_gt_noise_flag in [True, False]:
+        for test_gt_noise_flag in [True, False]:
+            for train_gt_noise_flag in [True, False]:
+                for train_pose_aug_flag in [True, False]: 
 
-                    setting_name = f'experiments_test/GARMENT_{garment_flag}_TESTGT_{test_gt_noise_flag}_TRAINGT_{train_gt_noise_flag}_TRAINAUG_{train_pose_aug_flag}'
-                    perf_dict = joblib.load(f'{setting_name}/metrics.pkl')
-                    table.append([setting_name, perf_dict['j2j'], perf_dict['v2v']])
+                    setting_name = f'GARMENT_{garment_flag}_TESTGT_{test_gt_noise_flag}_TRAINGT_{train_gt_noise_flag}_TRAINAUG_{train_pose_aug_flag}'
 
-    open('results.txt', 'w').write(tabulate(table))
+                    try:
+                        perf_dict = joblib.load(f'experiments_test/{setting_name}/metrics.pkl')
+                        table.append([setting_name, perf_dict['j2j'], perf_dict['v2v']])
+                    except:
+                        print(f'Could not find {setting_name}')
+                        continue
+
+                        
+
+    open('results.txt', 'w').write(tabulate(table, headers=metric_names, tablefmt="grid", missingval='N/A'))
 
 # spawn_train()
-spawn_test()
-# make_table()     
+# spawn_test()
+make_table()     
