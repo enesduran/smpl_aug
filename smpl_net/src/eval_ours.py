@@ -1,11 +1,10 @@
-import argparse
 import os
-from pathlib import Path
-
-import numpy as np
-import trimesh 
-import smplx
 import torch
+import joblib
+import trimesh 
+import argparse
+import numpy as np
+from pathlib import Path
 import tqdm.auto as tqdm
 import webdataset as wds
 from data import DFaustDataset
@@ -14,7 +13,7 @@ from pytorch3d.ops.knn import knn_points
 
 from geometry import get_body_model
 from models_pointcloud import PointCloud_network_equiv
-from train_ours import SMPLX_layer, get_nc_and_view_channel, kinematic_layer_SO3_v2, get_gpu
+from train_ours import SMPLX_layer, get_nc_and_view_channel, kinematic_layer_SO3_v2, get_gpu, str2bool
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -23,9 +22,10 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", type=int, default=15, metavar="N", help="which model epoch to use (default: 15)")
     parser.add_argument("--rep_type", type=str, default="6d", metavar="N", help="aa, 6d")
     parser.add_argument("--part_num", type=int, default=22, metavar="N", help="part num of the SMPL body")
-    parser.add_argument("--garment-flag", type=bool)
-    parser.add_argument("--gt-flag", type=bool)
-    parser.add_argument("--aug-flag", type=bool)
+    parser.add_argument("--garment-flag", type=str2bool)
+    parser.add_argument("--test-gt-flag", type=str2bool)
+    parser.add_argument("--train-gt-flag", type=str2bool)
+    parser.add_argument("--train-aug-flag", type=str2bool)
     parser.add_argument("--num_point", type=int, default=5000, metavar="N", help="point num sampled from mesh surface")
     parser.add_argument("--aug_type", type=str, default="so3", metavar="N", help="so3, zrot, no")
     parser.add_argument("--gt_part_seg", type=str, default="auto", metavar="N", help="")
@@ -41,12 +41,20 @@ if __name__ == "__main__":
 
     args.device = torch.device("cuda")
 
-    exps_folder = "GARMENT_{}_GT_{}_AUG_{}_num_point_{}".format(args.garment_flag,
-                                                                args.gt_flag,
-                                                                args.aug_flag,
-                                                                args.num_point)
+    exps_folder = "GARMENT_{}_TESTGT_{}_TRAINGT_{}_TRAINAUG_{}".format(args.garment_flag,
+                                                                        args.test_gt_flag,
+                                                                        args.train_gt_flag,
+                                                                        args.train_aug_flag)
 
-    output_folder = os.path.sep.join(["./experiments", exps_folder])
+    model_folder = "GARMENT_{}_GT_{}_AUG_{}".format(args.garment_flag,
+                                                    args.train_gt_flag,
+                                                    args.train_aug_flag)
+
+
+    output_folder = os.path.sep.join(["./experiments_test", exps_folder])
+
+    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(os.path.join(output_folder, 'results'), exist_ok=True)
 
     if args.paper_model:
         output_folder = "./data/papermodel/"
@@ -68,14 +76,15 @@ if __name__ == "__main__":
                "female": body_model_female,
                "male": body_model_male}
 
-    parents = body_model_neutral.parents[:22]
+    parents = body_model_neutral.parents
+    # parents = parents[:22]
 
     base_path = Path(output_folder)
     torch.manual_seed(1)
 
     test_dataset = DFaustDataset(data_path='outdir/DFaust', 
                                  train_flag=False, 
-                                 gt_flag=args.gt_flag, 
+                                 gt_flag=args.test_gt_flag, 
                                  aug_flag=False, 
                                  garment_flag=args.garment_flag)
   
@@ -85,10 +94,8 @@ if __name__ == "__main__":
                               pin_memory=True, 
                               drop_last=True)
 
+    model_path = os.path.join('experiments_train', model_folder, f"model_epochs_{args.epoch-1:08d}.pth")
  
-    model_path = base_path / f"model_epochs_{args.epoch-1:08d}.pth"
-    os.makedirs(os.path.join(os.path.dirname(model_path), 'results'), exist_ok=True)
-
     model = PointCloud_network_equiv(option=args, z_dim=args.latent_num, nc=nc, part_num=len(parents)).to(args.device)
 
     print(f"Loading model from {model_path}")
@@ -152,14 +159,14 @@ if __name__ == "__main__":
             
             v2v[f"{i}"] = (100 * (vertices_gt - pred_vertices).square().sum(dim=-1).sqrt().mean().item())
             joint_err[f"{i}"] = (100 * (joints_gt - pred_joints_pos).square().sum(dim=-1).sqrt().mean().item())
-
             # acc[f"{i}"] = ((pred_joint[0].argmax(dim=1).cpu() == batch_data["label_data"][: args.num_point]).mean(dtype=float).item())
 
+            trimesh.Trimesh(vertices=pred_vertices.cpu(), faces=body_model_neutral.faces).export(os.path.join(output_folder, 'results', f'body_pred_{i:04d}.obj'))
+            trimesh.Trimesh(vertices=vertices_gt.cpu(), faces=body_model_neutral.faces).export(os.path.join(output_folder, 'results', f'body_gt_{i:04d}.obj'))
+            trimesh.PointCloud(pcl_data[0].cpu().numpy()).export(os.path.join(output_folder, 'results', f'pc_{i:04d}.ply'))  
 
-            trimesh.Trimesh(vertices=pred_vertices.cpu(), faces=body_model_neutral.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_pred_{i:04d}.obj'))
-            trimesh.Trimesh(vertices=vertices_gt.cpu(), faces=body_model_neutral.faces).export(os.path.join(os.path.dirname(model_path), 'results', f'body_gt_{i:04d}.obj'))
-            trimesh.PointCloud(pcl_data[0].cpu().numpy()).export(os.path.join(os.path.dirname(model_path), 'results', f'pc_{i:04d}.ply'))
-            # import ipdb; ipdb.set_trace()
+    metric_dict = {"v2v":np.mean(list(v2v.values())),
+                    "j2j":np.mean(list(joint_err.values()))}
 
-    print(f"v2v={np.mean(list(v2v.values())):.3f} joint_err={np.mean(list(joint_err.values())):.3f}") 
-            # part_acc={100*np.mean(list(acc.values())):.3f}")
+    print('Saving metrics')    
+    joblib.dump(metric_dict, os.path.join(output_folder, "metrics.pkl"))

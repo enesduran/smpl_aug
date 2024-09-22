@@ -33,7 +33,7 @@ class PointCloud_network_equiv(nn.Module):
         from layers import StackedMHSA
         from so3net import build_model
 
-        model_setting_file = "./experiments/EPN_model_setting.json"
+        model_setting_file = "./experiments_train/EPN_model_setting.json"
         EPN_cfg = get_default_cfg()
         EPN_cfg.model.search_radius = option.EPN_input_radius
 

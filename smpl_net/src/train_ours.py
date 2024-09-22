@@ -142,9 +142,7 @@ def get_pointcloud_(vertices_list, n_points_surface, gender_list):
     for _j_, vertices in enumerate(vertices_list):
 
         n_points_surface = vertices.shape[0]
-        # n_points_surface = 5000
-        if n_points_surface != 6890:
-            import ipdb; ipdb.set_trace()
+        
  
         points_surface, points_surface_lbs = sample_points(vertices=vertices.cpu().numpy()[None], 
                                                         faces=body_model_faces, 
@@ -234,9 +232,9 @@ def SMPLX_layer(body_model_list, betas, translation, motion_pose, rep="6d"):
 def train(args, model, bodymodel_dict, optimizer, train_loader):
     model.train()
 
-    pbar = tqdm.tqdm(train_loader)
+    # pbar = tqdm.tqdm(train_loader)
   
-    for batch_data in pbar:
+    for batch_data in train_loader:
 
         motion_pose_aa = batch_data["pose"].to(args.device)        
         motion_trans = batch_data["trans"].to(args.device)
@@ -269,8 +267,7 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
 
             # trimesh.Trimesh(vertices=gt_vertices[0].cpu(), faces=bodymodel_dict[batch_data["gender"][_i_]].faces).export(os.path.join(f'rezz/body_gt_{_i_:04d}.obj'))
             # trimesh.PointCloud(pc_data_list[_i_][clo_pts].cpu().numpy()).export(os.path.join(f'rezz/pc_{_i_:04d}.ply'))
-            # import ipdb; ipdb.set_trace()
- 
+       
         pcl_data, label_data, pcl_lbs = get_pointcloud_(pc_data_list_idx, args.num_point, gender_list=batch_data["gender"])
 
         losses = {}
@@ -349,9 +346,18 @@ def train(args, model, bodymodel_dict, optimizer, train_loader):
 
         batch_correct = correct.item() / (args.batch_size * args.num_point)
 
-        pbar.set_description(f"Batch part acc: {batch_correct:.03f} Training Loss: {all_loss.item():.02f}")
+        # pbar.set_description(f"Batch part acc: {batch_correct:.03f} Training Loss: {all_loss.item():.02f}")
         
     return all_loss
+
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 
 
 if __name__ == "__main__":
@@ -367,9 +373,9 @@ if __name__ == "__main__":
     parser.add_argument("--num_point", type=int, default=5000, metavar="N", help="point num sampled from mesh surface")
     parser.add_argument("--aug_type", type=str, default="so3", metavar="N", help="so3, zrot, no")
     parser.add_argument("--gt_part_seg", type=str, default="auto", metavar="N", help="")
-    parser.add_argument("--gt-flag", type=bool)
-    parser.add_argument("--garment-flag", type=bool)
-    parser.add_argument("--aug-flag", type=bool)
+    parser.add_argument("--gt-flag", type=str2bool)
+    parser.add_argument("--garment-flag", type=str2bool)
+    parser.add_argument("--aug-flag", type=str2bool)
     parser.add_argument("--EPN_input_radius", type=float, default=0.4, help="train from pretrained model")
     parser.add_argument("--EPN_layer_num", type=int, default=2, metavar="N", help="point num sampled from mesh surface")
     parser.add_argument("--kinematic_cond", type=str, default="yes", metavar="N", help="point num sampled from mesh surface")
@@ -387,12 +393,11 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     args.device = torch.device("cuda" if args.cuda else "cpu")
 
-    exps_folder = "GARMENT_{}_GT_{}_AUG_{}_num_point_{}".format(args.garment_flag,
-                                                                args.gt_flag,
-                                                                args.aug_flag,
-                                                                args.num_point)
+    exps_folder = "GARMENT_{}_GT_{}_AUG_{}".format(args.garment_flag,
+                                                    args.gt_flag,
+                                                    args.aug_flag)
    
-    output_folder = os.path.sep.join(["./experiments", exps_folder])
+    output_folder = os.path.sep.join(["experiments_train", exps_folder])
  
     body_model_neutral = get_body_model(model_type="smpl", gender="neutral", 
                                         batch_size=1, device="cuda")
@@ -417,9 +422,8 @@ if __name__ == "__main__":
 
     part_num = len(parents)
 
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
+    os.makedirs(output_folder, exist_ok=True)
+  
     nc, _ = get_nc_and_view_channel(args)
 
     model = PointCloud_network_equiv(option=args,
@@ -445,7 +449,7 @@ if __name__ == "__main__":
                               pin_memory=True, 
                               drop_last=True)
 
-
-    for epoch in range(args.epochs):
+    for epoch in tqdm.tqdm(range(args.epochs)):
         average_all_loss = train(args, model, bm_dict, optimizer, train_loader) 
+        print(f"Epoch: {epoch}, Loss: {average_all_loss.item()}")
         torch.save(model.state_dict(), os.path.join(output_folder, f"model_epochs_{epoch:08d}.pth"))

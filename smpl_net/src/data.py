@@ -125,13 +125,17 @@ class DFaustDataset(torch.utils.data.Dataset):
 
         pc_key = 'point_cloud_gt' if self.gt_flag else 'point_cloud_noisy'
         other_pc_key = 'point_cloud_noisy' if self.gt_flag else 'point_cloud_gt'
+
+        idx = 0 
  
         for k, v in superset_data.items():
 
             if (self.aug_flag or (v['aug_flag'] == self.aug_flag)):
-                self.data_dict[k] = v
-                self.data_dict[k].pop(other_pc_key)
-                self.data_dict[k]['point_cloud'] = self.data_dict[k].pop(pc_key)
+                self.data_dict[str(idx)] = v
+                self.data_dict[str(idx)].pop(other_pc_key)
+                self.data_dict[str(idx)]['point_cloud'] = self.data_dict[str(idx)].pop(pc_key)
+
+                idx += 1
 
             
     def load_data(self):

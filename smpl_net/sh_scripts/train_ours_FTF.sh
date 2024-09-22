@@ -7,8 +7,8 @@ module load cuda/11.8
 --epochs 15 \
 --batch_size 2 \
 --gt_part_seg auto \
---garment-flag true \
---gt-flag false \
+--garment-flag false \
+--gt-flag true \
 --aug-flag false \
 --kinematic_cond yes \
 --num_point 50000  
