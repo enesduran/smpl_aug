@@ -5,10 +5,11 @@ We provide a framework for batch depth rendering and data augmentation of SMPL b
     1) Data augmentation tool for multiview noisy depth images
     2) Simulation accompanying kinect camera noise for a given RGB video 
 
+We also release our code for training and evaluation at this link (todo)
 
 Huge shoutout to [SMPLX](https://github.com/vchoutas/smplx), [SCULPT](https://github.com/soubhiksanyal/SCULPT_release), [SimKinect](https://github.com/ankurhanda/simkinect) implementations. 
 
-Contributors: ...
+Contributors: Enes Duran, Mattia Masiero, Yunhan Wang
 
 ### Creating Environment 
 
@@ -45,7 +46,13 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
 
 #### SCULPT (Optional)
 
-Our framework uses SCULPT as garment generation model. If you want to make use of this optional feature go to [SCULPT webpage](https://sculpt.is.tue.mpg.de/) and register. Download Pre-trained weights for the Geometry Network  and place them under `smplx/sculpt/data`
+Our framework uses SCULPT as garment generation model. If you want to make use of this optional feature go to [SCULPT webpage](https://sculpt.is.tue.mpg.de/) and register. Download Pre-trained weights for the Geometry Network  and place them under `smplx/sculpt/data`. 
+
+If you plan to use SCUPT to dress SMPL body, please set the flag `--clothing-option clothed`.
+
+#### Config file
+
+You can set the body model path, motion npz file path, and camera config path in `configs/config.yaml`.
 
 ### Run Demo 
 
@@ -53,33 +60,10 @@ Having set environment up, downloaded models and placed them under the correspon
  
 To forwarding SMPL and getting corresponding kinect depth and point cloud: <br /> 
 ```
-python core/demo.py --model-folder body_models --body-model-type smpl --motion-path motion_data/sample_motion_data_smpl.npz --camera-config camera_configs/kinect.json
+python core/demo.py --body-model-type smpl
 ``` 
+If you would like to use SMPL-X or SMPL-H for the forward pass, please change `--body-model-type` to `smplx` or `smplh` respectively.
 
-For SMPLH: <br /> 
-```
-python core/demo.py --model-folder body_models --body-model-type smplh --motion-path motion_data/sample_motion_data_smplh.npz --camera-config camera_configs/kinect.json
-``` 
-
-For SMPLX: <br /> 
-```
-python core/demo.py --model-folder body_models --body-model-type smplx --motion-path motion_data/sample_motion_data_smplx.npz --camera-config camera_configs/kinect.json
-``` 
+By runing `demo.py`, it will first create a SMPL wrapper class with the provided SMPL model. Then it loads the provided motions and synthesize corresponding augmented human point cloud.
 
 The outputs will be saved under `outdir/`
-
-
-TODO (with importance order)
-
-- [ ] Train ArtEq 
-        a) W/o augmentation, gt rendering 
-        a) W/o augmentation, Kinect rendering 
-        a) W augmentation, gt rendering 
-        a) W augmentation, Kinect rendering
-
-- [ ]  Contemplate about possible use cases (no empirical demonstration): 
-        a) Providing 3D scene or already rendered depth image of the scene as an optional argument render object and humans on top of it. 
-        b) Given a dataset of human motion and RGB images, simulate Kinect depth and point cloud.  
-        
-- [ ]  Write the report 
-- [ ]  Presentation 

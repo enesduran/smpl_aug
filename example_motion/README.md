@@ -1,0 +1,1 @@
+Note: the *.npz motion files are from the [AMASS](https://amass.is.tue.mpg.de/) dataset. If you use those motion files please respect the AMASS listence and consider cite the AMASS paper.
