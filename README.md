@@ -56,14 +56,14 @@ You can set the body model path, motion npz file path, and camera config path in
 
 ### Run Demo 
 
-Having set environment up, downloaded models and placed them under the corresponding paths, you are good to go! To run the augmentation:
- 
-To forwarding SMPL and getting corresponding kinect depth and point cloud: <br /> 
+After setting the environment up, downloading models, and placing them under the corresponding paths, you are good to go! To run the augmentation:
+
+To forward SMPL and get the corresponding Kinect depth and point cloud:
+
 ```
 python core/demo.py --body-model-type smpl
-``` 
-If you would like to use SMPL-X or SMPL-H for the forward pass, please change `--body-model-type` to `smplx` or `smplh` respectively.
+```
 
-By runing `demo.py`, it will first create a SMPL wrapper class with the provided SMPL model. Then it loads the provided motions and synthesize corresponding augmented human point cloud.
+If you would like to use SMPL-X or SMPL-H for the forward pass, please change --body-model-type to smplx or smplh respectively.
 
-The outputs will be saved under `outdir/`
+When running demo.py, it first creates an SMPL wrapper class with the provided SMPL model. Then, it loads the provided motions and synthesizes the corresponding augmented human point cloud.
