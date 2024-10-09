@@ -1,1 +1,1 @@
-Note: we base our implementation on [SimKinect](https://github.com/ankurhanda/simkinect/). Please respect their listence and consider cite their paper if you find our code useful.
+Note: we base our implementation on [SimKinect](https://github.com/ankurhanda/simkinect/). Please respect their licence and consider citing their paper if you use our code.
