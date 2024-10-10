@@ -1,9 +1,12 @@
 # SMPL AUGMENTATION LIBRARY 
+<div style="text-align:center"><img src="assets/Method_Overview_Colour.png" alt="drawing" width="1000"/></div>
+
+**SMPLAug** is data augmentation library specifically designed for the widely-used SMPL human body model. Our approach enables users to generate SMPL body models with added Kinect noise, clothing, and symmetric poses, helping to expand the quantity and quality of data for real-world applications.
 
 We provide a framework for batch depth rendering and data augmentation of SMPL body model. We aim to show the effectiveness of our framework in some plausible use cases:
 
-    1) Data augmentation tool for multiview noisy depth images
-    2) Simulation accompanying kinect camera noise for a given RGB video 
+    1) Data augmentation tool for 3D human-related tasks (e.g. 3D human registration and segmentation).
+    2) Additional point cloud modality to RGB video with human using an off-the-shelf body pose & shape estimation method.
 
 We also release our code for training and evaluation at this link (todo)
 
@@ -25,7 +28,7 @@ Here are the instructions for setting SCULPT and SMPL models.
 
 #### Body Models 
 
-Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version 1.1.0 and put them under `body_models` folder. 
+Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version **1.1.0** and put them under `body_models` folder. If you have an existing body models folder, please set the path at `model_folder` in `configs/config.yaml`.
 
 ```
 ./body_models
