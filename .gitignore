@@ -8,11 +8,11 @@ smpl_net/experiments_train
 
 *.obj
 *.pkl
-*.npz
+# *.npz
 *.log
-*.json
+# *.json
 *.npy
 *.ply
 *.pyc
-*.png
+# *.png
 *.zip
