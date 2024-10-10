@@ -1,12 +1,12 @@
 # SMPL AUGMENTATION LIBRARY 
 <div style="text-align:center"><img src="assets/Method_Overview_Colour.png" alt="drawing" width="1000"/></div>
 
-**SMPLAug** is data augmentation library specifically designed for the widely-used SMPL human body model. Our approach enables users to generate SMPL body models with added Kinect noise, clothing, and symmetric poses, helping to expand the quantity and quality of data for real-world applications.
+**SMPLAug** is a data augmentation library specifically designed for the widely-used SMPL human body model. Our approach enables users to generate SMPL body models with added Kinect noise, clothing, and symmetric poses, helping to expand the quantity and quality of data for real-world applications.
 
-We provide a framework for batch depth rendering and data augmentation of SMPL body model. We aim to show the effectiveness of our framework in some plausible use cases:
+We provide a framework for batch depth rendering and data augmentation of the SMPL body model. We aim to show the effectiveness of our framework in some plausible use cases:
 
     1) Data augmentation tool for 3D human-related tasks (e.g. 3D human registration and segmentation).
-    2) Additional point cloud modality to RGB video with human using an off-the-shelf body pose & shape estimation method.
+    2) Additional point cloud modality to RGB video with humans using an off-the-shelf body pose & shape estimation method.
 
 We also release our code for training and evaluation at this link (todo)
 
@@ -16,7 +16,7 @@ Contributors: Enes Duran, Mattia Masiero, Yunhan Wang
 
 ### Creating Environment 
 
-Create envrionment by running:
+Create environment by running:
 
 ```
 conda env create -f env.yml
@@ -49,9 +49,9 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
 
 #### SCULPT (Optional)
 
-Our framework uses SCULPT as garment generation model. If you want to make use of this optional feature go to [SCULPT webpage](https://sculpt.is.tue.mpg.de/) and register. Download Pre-trained weights for the Geometry Network  and place them under `smplx/sculpt/data`. 
+Our framework uses SCULPT as a garment generation model. If you want to use this optional feature go to [SCULPT webpage](https://sculpt.is.tue.mpg.de/) and register. Download Pre-trained weights for the Geometry Network  and place them under `smplx/sculpt/data`. 
 
-If you plan to use SCUPT to dress SMPL body, please set the flag `--clothing-option clothed`.
+If you plan to use SCUPT to dress the SMPL body, please set the flag `--clothing-option clothed`.
 
 #### Config file
 
@@ -74,4 +74,4 @@ bash scripts/create_smpl_minimal.sh
 
 If you would like to use SMPL-X or SMPL-H for the forward pass, please change --body-model-type to smplx or smplh respectively.
 
-When running demo.py, it first creates an SMPL wrapper class with the provided SMPL model. Then, it loads the provided motions and synthesizes the corresponding augmented human point cloud.
+When running demo.py, an SMPL wrapper class is first created with the provided SMPL model. Then, it loads the provided motions and synthesizes the corresponding augmented human point cloud. The results will be stored in `outdir`.
