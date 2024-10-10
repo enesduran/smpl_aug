@@ -58,10 +58,15 @@ You can set the body model path, motion npz file path, and camera config path in
 
 After setting the environment up, downloading models, and placing them under the corresponding paths, you are good to go! To run the augmentation:
 
-To forward SMPL and get the corresponding Kinect depth and point cloud:
+To forward SMPL and get the corresponding Kinect depth and point cloud **with** cloth:
 
 ```
-python core/demo.py --body-model-type smpl
+bash scripts/create_smpl_garment.sh
+```
+
+To forward SMPL and get the corresponding Kinect depth and point cloud **without** cloth:
+```
+bash scripts/create_smpl_minimal.sh
 ```
 
 If you would like to use SMPL-X or SMPL-H for the forward pass, please change --body-model-type to smplx or smplh respectively.
