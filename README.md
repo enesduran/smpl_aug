@@ -8,7 +8,7 @@ We provide a framework for batch depth rendering and data augmentation of the SM
     1) Data augmentation tool for 3D human-related tasks (e.g. 3D human registration and segmentation).
     2) Additional point cloud modality to RGB video with humans using an off-the-shelf body pose & shape estimation method.
 
-We also release our code for training and evaluation at this link (todo)
+We also release our code for training and evaluation at this [link](https://github.com/enesduran/smpl_net)
 
 Huge shoutout to [SMPLX](https://github.com/vchoutas/smplx), [SCULPT](https://github.com/soubhiksanyal/SCULPT_release), [SimKinect](https://github.com/ankurhanda/simkinect) implementations. 
 
