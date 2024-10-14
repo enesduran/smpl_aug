@@ -28,7 +28,7 @@ Here are the instructions for setting SCULPT and SMPL models.
 
 #### Body Models 
 
-Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version **1.1.0** and put them under `body_models` folder. If you have an existing body models folder, please set the path at `model_folder` in `configs/config.yaml`.
+Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](https://mano.is.tue.mpg.de) or [SMPLX](https://smpl-x.is.tue.mpg.de/) explicit body models. and register. Download version **1.1.0** and put them under a folder, e.g. `body_models`. If you have an existing body models folder, please set the path at `model_folder` in `configs/config.yaml`. The folder structure should look like the following:
 
 ```
 ./body_models
