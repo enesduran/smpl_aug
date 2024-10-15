@@ -34,6 +34,7 @@ if __name__ == "__main__":
     parser.add_argument("--kinematic_cond", type=str, default="yes", metavar="N", help="point num sampled from mesh surface")
     parser.add_argument("--i", type=int, default=None, help="")
     parser.add_argument("--paper_model", action="store_true")
+    parser.add_argument("--arteq_flag", type=str2bool, default=False)
 
     args = parser.parse_args()
     args.cuda = torch.cuda.is_available()
@@ -41,17 +42,29 @@ if __name__ == "__main__":
 
     args.device = torch.device("cuda")
 
-    exps_folder = "GARMENT_{}_TESTGT_{}_TRAINGT_{}_TRAINAUG_{}".format(args.garment_flag,
-                                                                        args.test_gt_flag,
-                                                                        args.train_gt_flag,
-                                                                        args.train_aug_flag)
 
-    model_folder = "GARMENT_{}_GT_{}_AUG_{}".format(args.garment_flag,
-                                                    args.train_gt_flag,
-                                                    args.train_aug_flag)
+    if args.arteq_flag:
+        
+        model_folder = 'data/papermodel'
+
+        output_folder = "./experiments_test/arteq_on_kinect/GARMENT_{}_TESTGT_{}".format(args.garment_flag,
+                                                                                        args.test_gt_flag)                                                                       
+        model_path = os.path.join(model_folder, f"model_epochs_{args.epoch-1:08d}.pth")
+
+    else:
+        exps_folder = "GARMENT_{}_TESTGT_{}_TRAINGT_{}_TRAINAUG_{}".format(args.garment_flag,
+                                                                            args.test_gt_flag,
+                                                                            args.train_gt_flag,
+                                                                            args.train_aug_flag)
+
+        model_folder = "GARMENT_{}_GT_{}_AUG_{}".format(args.garment_flag,
+                                                        args.train_gt_flag,
+                                                        args.train_aug_flag)
+        
+        model_path = os.path.join('experiments_train', model_folder, f"model_epochs_{args.epoch-1:08d}.pth")
 
 
-    output_folder = os.path.sep.join(["./experiments_test", exps_folder])
+        output_folder = os.path.sep.join(["./experiments_test", exps_folder])
 
     os.makedirs(output_folder, exist_ok=True)
     os.makedirs(os.path.join(output_folder, 'results'), exist_ok=True)
@@ -77,7 +90,10 @@ if __name__ == "__main__":
                "male": body_model_male}
 
     parents = body_model_neutral.parents
-    # parents = parents[:22]
+
+    if args.arteq_flag:
+        parents = parents[:22]
+    
 
     base_path = Path(output_folder)
     torch.manual_seed(1)
@@ -94,11 +110,10 @@ if __name__ == "__main__":
                               pin_memory=True, 
                               drop_last=True)
 
-    model_path = os.path.join('experiments_train', model_folder, f"model_epochs_{args.epoch-1:08d}.pth")
- 
     model = PointCloud_network_equiv(option=args, z_dim=args.latent_num, nc=nc, part_num=len(parents)).to(args.device)
 
     print(f"Loading model from {model_path}")
+
     model.load_state_dict(torch.load(model_path))
        
     v2v, joint_err, acc = {}, {}, {}
@@ -166,7 +181,9 @@ if __name__ == "__main__":
             trimesh.PointCloud(pcl_data[0].cpu().numpy()).export(os.path.join(output_folder, 'results', f'pc_{i:04d}.ply'))  
 
     metric_dict = {"v2v":np.mean(list(v2v.values())),
-                    "j2j":np.mean(list(joint_err.values()))}
+                    "j2j":np.mean(list(joint_err.values())),
+                    'j2j_dict': joint_err,
+                    'v2v_dict': v2v}
 
     print('Saving metrics')    
     joblib.dump(metric_dict, os.path.join(output_folder, "metrics.pkl"))

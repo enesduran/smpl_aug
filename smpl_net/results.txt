@@ -33,9 +33,3 @@
 +---------------------------------------------------------+------------+------------+
 | GARMENT_False_TESTGT_False_TRAINGT_False_TRAINAUG_False |   23.3234  |   20.1612  |
 +---------------------------------------------------------+------------+------------+
-
-
-Garment: True if SCULPT is used, False if minimal. 
-TRAINAUG: True if pose flipping is performed, False if not
-TRAINGT: True if gt rendering is used False for Kinect used in training  
-TESTGT: True if gt rendering is used False for Kinect in testing

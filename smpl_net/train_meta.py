@@ -41,7 +41,7 @@ SUBMISSION_TEMPLATE = f'executable = RUN_SCRIPT\n' \
                        'request_cpus=4\n' \
                        'request_gpus=1\n' \
                        'request_disk=100000\n' \
-                       'requirements = TARGET.CUDACapability == 9.0 \n' \
+                       'requirements = TARGET.CUDACapability >= 8.9 \n' \
                        'queue 1 \n' \
                        '+BypassLXCfs="true"'
 
@@ -51,6 +51,7 @@ import time
 import joblib
 import shutil
 import subprocess
+import numpy as np
 from tabulate import tabulate
 
 TRAIN_FILENAME = 'sh_scripts/train_ours_GARMENTFLAGGTFLAGAUGFLAG.sh'
@@ -89,7 +90,7 @@ def spawn_train():
                     f.write(SUBMISSION_TEMPLATE_CHANGED)
 
                 # create and write the bash run script.
-                cmd = ['condor_submit_bid', f'300', str(submission_path)]
+                cmd = ['condor_submit_bid', f'1100', str(submission_path)]
                 print('Executing ' + ' '.join(cmd))
 
                 i += 1
@@ -134,7 +135,7 @@ def spawn_test():
                         f.write(SUBMISSION_TEMPLATE_CHANGED)
 
                     # create and write the bash run script.
-                    cmd = ['condor_submit_bid', f'300', str(submission_path)]
+                    cmd = ['condor_submit_bid', f'1100', str(submission_path)]
                     print('Executing ' + ' '.join(cmd))
 
                     i += 1
@@ -148,6 +149,7 @@ def make_table():
 
     metric_names = ['setting', 'j2j (cm)', 'v2v (cm)']
     table = []
+    all_perf_dict= {}
 
     for garment_flag in [True, False]:
         for test_gt_noise_flag in [True, False]:
@@ -155,18 +157,82 @@ def make_table():
                 for train_pose_aug_flag in [True, False]: 
 
                     setting_name = f'GARMENT_{garment_flag}_TESTGT_{test_gt_noise_flag}_TRAINGT_{train_gt_noise_flag}_TRAINAUG_{train_pose_aug_flag}'
+                    all_perf_dict[setting_name] = {}
 
                     try:
                         perf_dict = joblib.load(f'experiments_test/{setting_name}/metrics.pkl')
                         table.append([setting_name, perf_dict['j2j'], perf_dict['v2v']])
+
+                        all_perf_dict[setting_name]['v2v_dict'] = perf_dict['v2v_dict']
+                        all_perf_dict[setting_name]['j2j_dict'] = perf_dict['j2j_dict']
+
+                        
                     except:
                         print(f'Could not find {setting_name}')
                         continue
 
-                        
+    difference_dict1, difference_dict2 = {}, {}
+
+    best_dict1 = all_perf_dict['GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_True']
+    worst_dict1 = all_perf_dict['GARMENT_True_TESTGT_False_TRAINGT_True_TRAINAUG_False']
+    best_dict2 = all_perf_dict['GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_True']
+    worst_dict2 = all_perf_dict['GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_False']
+
+    difference_dict1['j2j'] = [v - best_dict1['j2j_dict'][k] for k, v in worst_dict1['j2j_dict'].items()] 
+    difference_dict1['v2v'] = [v - best_dict1['v2v_dict'][k] for k, v in worst_dict1['v2v_dict'].items()] 
+    difference_dict2['j2j'] = [v - best_dict2['j2j_dict'][k] for k, v in worst_dict2['j2j_dict'].items()] 
+    difference_dict2['v2v'] = [v - best_dict2['v2v_dict'][k] for k, v in worst_dict2['v2v_dict'].items()] 
+
+    j2j_idx_1 = np.argsort(difference_dict1['j2j'])
+    v2v_idx_1 = np.argsort(list(best_dict1['v2v_dict'].values()))
+
+    j2j_idx_2 = np.argsort(difference_dict2['j2j'])
+    v2v_idx_2 = np.argsort(difference_dict2['v2v'])
+
+    os.makedirs('qual_results', exist_ok=True)
+    
+
+    for idx in v2v_idx_1[:10]:
+        shutil.copy(f'experiments_test/GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_True/results/body_gt_{idx:04d}.obj', 
+                    f'qual_results/1_best_body_gt_{idx:04d}.obj')
+        shutil.copy(f'experiments_test/GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_True/results/body_pred_{idx:04d}.obj', 
+                    f'qual_results/1_best_body_pred_{idx:04d}.obj')
+        shutil.copy(f'experiments_test/GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_True/results/pc_{idx:04d}.ply', 
+                    f'qual_results/1_best_pc_{idx:04d}.ply')
+        shutil.copy(f'experiments_test/GARMENT_True_TESTGT_False_TRAINGT_True_TRAINAUG_False/results/body_pred_{idx:04d}.obj', 
+                    f'qual_results/1_worst_body_pred_{idx:04d}.obj')
+
+
+    import ipdb; ipdb.set_trace()
+
+    # GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_True
+    # GARMENT_True_TESTGT_False_TRAINGT_False_TRAINAUG_False
+    # GARMENT_True_TESTGT_False_TRAINGT_True_TRAINAUG_False
+
+ 
 
     open('results.txt', 'w').write(tabulate(table, headers=metric_names, tablefmt="grid", missingval='N/A'))
 
+def make_arteq_table():
+
+    metric_names = ['setting', 'j2j (cm)', 'v2v (cm)']
+    table = []
+    all_perf_dict= {}
+
+    for garment_flag in [True, False]:
+        for test_gt_noise_flag in [True, False]:
+
+            setting_name = f'GARMENT_{garment_flag}_TESTGT_{test_gt_noise_flag}'
+            all_perf_dict[setting_name] = {}
+
+            perf_dict = joblib.load(f'experiments_test/arteq_on_kinect/{setting_name}/metrics.pkl')
+            table.append([setting_name, perf_dict['j2j'], perf_dict['v2v']])
+
+          
+    open('arteq_results.txt', 'w').write(tabulate(table, headers=metric_names, tablefmt="grid", missingval='N/A'))
+
+
 # spawn_train()
 # spawn_test()
-make_table()     
+# make_table()   
+make_arteq_table()  
