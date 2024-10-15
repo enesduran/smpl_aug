@@ -1,5 +1,6 @@
 outdir
 core/sculpt/data
+smpl_net
 smpl_net/data
 smpl_net/sub_files
 smpl_net/cluster_logs
