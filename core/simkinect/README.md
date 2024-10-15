@@ -1,0 +1,1 @@
+Note: we base our implementation on [SimKinect](https://github.com/ankurhanda/simkinect/). Please respect their license and consider citing their paper if you use our code.
