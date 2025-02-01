@@ -49,7 +49,7 @@ Our framework is compatible with [SMPL](https://smpl.is.tue.mpg.de/), [SMPLH](ht
 
 #### SCULPT (Optional)
 
-Our framework uses SCULPT as a garment generation model. If you want to use this optional feature go to [SCULPT webpage](https://sculpt.is.tue.mpg.de/) and register. Download Pre-trained weights for the Geometry Network  and place them under `smplx/sculpt/data`. 
+Our framework uses SCULPT as a garment generation model. If you want to use this optional feature go to [SCULPT webpage](https://sculpt.is.tue.mpg.de/) and register. Download Pre-trained weights for the Geometry Network  and place them under `core/sculpt/data`. 
 
 If you plan to use SCUPT to dress the SMPL body, please set the flag `--clothing-option clothed`.
 
