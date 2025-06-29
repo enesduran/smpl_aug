@@ -1,5 +1,5 @@
 # SMPL AUGMENTATION LIBRARY 
-<div style="text-align:center"><img src="assets/smplaug_pipeline" alt="drawing" width="1000"/></div>
+<div style="text-align:center"><img src="assets/smplaug_pipeline.png" alt="drawing" width="1000"/></div>
 
 **SMPLAug** is a data augmentation library specifically designed for the widely-used SMPL human body model. Our approach enables users to generate SMPL body models with added Kinect noise, clothing, and symmetric poses, helping to expand the quantity and quality of data for real-world applications.
 
